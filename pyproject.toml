@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "k8s-async"
+version = "0.1.0"
+description = "Async Task Execution + AWS Batch Replacement for Kubernetes"
+authors = ["Daniel Tahara <dktahara@gmail.com>"]
+license = "Apache-2.0"
+
+[tool.poetry.dependencies]
+python = "^3.6"
+kubernetes = "^10.0"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
