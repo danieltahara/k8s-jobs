@@ -1,5 +1,6 @@
+=========
 K8s Async
----
+=========
 
 K8s Async is a library and server implementation for asynchronous jobs on Kubernetes. It is intended
 to provide a simple framework for executing single-shot asynchronous jobs or commands (unlike
@@ -7,10 +8,11 @@ something like Celery that can have arbitrary fanout and nesting), as well as a 
 implementation that can stand in as a replacement for AWS Batch and trigger jobs on-command.
 
 What's Inside
-===
+-------------
 
 Worker
-+++
+++++++
+
 The worker consists of a configurable queue consumer that reads messages off of a queue and either
 processes a single message before exiting, or runs as a daemon or until some stop condition is met.
 
@@ -19,7 +21,7 @@ of a 'worker' as the basis of a one-off Kubernetes job or a daemon as part of a 
 deployment.
 
 Server
-+++
+++++++
 
 The server listens on a route for job creation requests, much in the same way AWS batch might be
 implemented under the hood. Given a request, it will do some combination of enqueueing the message
@@ -31,6 +33,6 @@ could be configured with a set of worker daemons, in which case the per-job capa
 and a job pod need not be created.
 
 QuickStart
-===
+----------
 
 TODO:
