@@ -1,7 +1,8 @@
+from datetime import datetime, timedelta
 from unittest.mock import ANY, Mock
 import yaml
 
-from kubernetes.client import V1Job, V1ObjectMeta
+from kubernetes.client import V1Job, V1JobList, V1JobStatus, V1ListMeta, V1ObjectMeta
 import pytest
 
 from k8s_async.k8s.job import (
@@ -107,3 +108,53 @@ class TestJobManager:
 
         with pytest.raises(KeyError):
             manager.create_job("unknown")
+
+    def test_is_old_job(self):
+        manager = JobManager(Mock(), namespace="fake", signer=Mock(), job_generators={})
+
+        job = V1Job(status=V1JobStatus())
+        assert not manager.is_old_job(job, 100)
+
+        now = datetime.now()
+        job = V1Job(status=V1JobStatus(completion_time=now))
+        assert not manager.is_old_job(job, 100)
+
+        before = now - timedelta(seconds=101)
+        job = V1Job(status=V1JobStatus(completion_time=before))
+        assert manager.is_old_job(job, 100)
+
+    def test_fetch_jobs(self):
+        mock_client = Mock()
+        mock_batch_client = mock_client.BatchV1Api.return_value
+        mock_batch_client.list_namespaced_job.return_value = V1JobList(
+            items=[1], metadata=V1ListMeta()
+        )
+        namespace = "hellomoto"
+        signer = JobSigner("foo")
+        manager = JobManager(
+            mock_client, namespace=namespace, signer=signer, job_generators={}
+        )
+
+        assert len(list(manager.fetch_jobs())) == 1
+        mock_batch_client.list_namespaced_job.assert_called_once_with(
+            namespace=namespace, label_selector=signer.label_selector
+        )
+
+    def test_fetch_jobs_continue(self):
+        mock_client = Mock()
+        mock_batch_client = mock_client.BatchV1Api.return_value
+        _continue = "xyz"
+        mock_batch_client.list_namespaced_job.side_effect = [
+            V1JobList(items=[1], metadata=V1ListMeta(_continue=_continue)),
+            V1JobList(items=[2], metadata=V1ListMeta()),
+        ]
+        namespace = "blech"
+        manager = JobManager(
+            mock_client, namespace=namespace, signer=Mock(), job_generators={}
+        )
+
+        assert len(list(manager.fetch_jobs())) == 2
+        assert mock_batch_client.list_namespaced_job.call_count == 2
+        mock_batch_client.list_namespaced_job.assert_called_with(
+            namespace=namespace, _continue=_continue
+        )

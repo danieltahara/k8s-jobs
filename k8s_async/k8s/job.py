@@ -150,7 +150,7 @@ class JobManager:
     ) -> bool:
         if job.status.completion_time:
             completed_ts = datetime.timestamp(job.status.completion_time)
-            if completed_ts + self.retention_period_sec <= time.time():
+            if completed_ts + retention_period_sec <= time.time():
                 return True
         return False
 
