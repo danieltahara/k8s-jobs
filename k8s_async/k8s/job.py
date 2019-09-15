@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 import logging
-import secrets 
+import secrets
 import threading
 import time
 from typing import Callable, Dict, Iterator
@@ -51,6 +51,7 @@ class JobSigner:
     A job signer will add a metadata label to a job to identify it as being created by a particular
     caller, and return a corresponding label selector for such jobs
     """
+
     LABEL_KEY = "app.kubernetes.io/managed-by"
 
     def __init__(self, signature: str):
@@ -141,7 +142,9 @@ class JobManager:
             )
             yield from response["items"]
 
-    def is_old_job(self, job: kubernetes.client.V1Job, retention_period_sec: int) -> bool:
+    def is_old_job(
+        self, job: kubernetes.client.V1Job, retention_period_sec: int
+    ) -> bool:
         if job.status.completion_time:
             completed_ts = datetime.timestamp(job.status.completion_time)
             if completed_ts + self.retention_period_sec <= time.time():
