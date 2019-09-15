@@ -1,0 +1,12 @@
+dist: xenial
+language: python
+python:
+  - 3.6
+services:
+  - docker
+before_install:
+  - pip install poetry
+install:
+  - poetry install
+script:
+  - pytest
