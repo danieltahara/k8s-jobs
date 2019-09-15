@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 import threading
 import time
-from typing import Iterator
+from typing import Dict, Iterator
 import yaml
 
 import kubernetes
@@ -45,32 +45,34 @@ class YamlFileConfigSource(JobConfigSource):
             return yaml.safe_load(f)
 
 
-class JobCreator:
+class JobSignatureGenerator:
+    """
+    A job signature generator will add a metadata item to a job to identify it as being created by a
+    particular caller, and return a corresponding label selector for such jobs
+    """
+
+    def __init__(self, signature: str):
+        """
+        Args:
+            signature: the managed-by label that will be used to identify jobs created by the caller
+        """
+        self.signature = signature
+
+    def add_signature(self, job: kubernetes.client.V1Job):
+        job["metadata"]["labels"]["app.kubernetes.io/managed-by"] = self.signature
+
+    @property
+    def label_selector(self) -> str:
+        return (f"app.kubernetes.io/managed-by={self.signature}",)
+
+
+class JobGenerator:
     @staticmethod
     def generate_name_suffix() -> str:
         return "123"
 
-    def __init__(
-        self, client: kubernetes.client, namespace: str, config_source: JobConfigSource
-    ):
-        """
-        Initializes with a kubernetes client and a config dict of the yaml-loaded job spec
-        """
-        self.client = client
-        self.namespace = namespace
+    def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
-
-    def create(self) -> str:
-        """
-        Creates a new job and returns its name
-        """
-        job = self.generate()
-        batch_v1_client = self.client.BatchV1Api()
-        response = batch_v1_client.create_namespaced_job(
-            namespace=self.namespace, body=job
-        )
-        logger.debug(response)
-        return response["metadata"]["name"]
 
     def generate(self) -> kubernetes.client.V1Job:
         """
@@ -78,14 +80,12 @@ class JobCreator:
         """
         config = self.config_source.get()
         config["metadata"]["name"] += self.generate_name_suffix()
-        config["metadata"]["labels"]["app.kubernetes.io/managed-by"] = "foobarba"
         return config
 
-# TODO: JobDeleter. Then make JobManager comprise them
 
 class JobManager:
     """
-    A JobManager is responsible for managing jobs, cleaning up errored or completed jobs after a
+    A JobManager is responsible for managing jobs, creating and deleting completed jobs after a
     grace period.
 
     Job timeouts are left to the creators of job specs, by setting .spec.activeDeadlineSeconds. Job
@@ -93,50 +93,78 @@ class JobManager:
     in alpha as of k8s v1.12
     """
 
-    def __init__(self, client: kubernetes.client, namespace: str, retention_period_sec: int):
+    def __init__(
+        self,
+        client: kubernetes.client,
+        namespace: str,
+        signature_generator: JobSignatureGenerator,
+        job_generators: Dict[str, JobGenerator],
+    ):
+
         self.client = client
-        self.retention_period_sec = retention_period_sec
+        self.namespace = namespace
+        self.signature_generator = signature_generator
+        self.job_generators = job_generators
 
         self._lock = threading.Lock()
         self._stopped = False
 
-    def delete_stale_jobs(self):
-        for job in self.fetch_jobs():
-            if job.status.completion_time:
-                completed_ts = datetime.timestamp(job.status.completion_time)
-                if completed_ts + self.retention_period_sec <= time.time():
-                    self.delete_job(job)
+    def create_job(self, job_name: str) -> str:
+        """
+        Spawn a job for the given job_name
+        """
+        job = self.job_generators[job_name].generate()
+        self.signature_generator.add_signature(job)
+        batch_v1_client = self.client.BatchV1Api()
+        response = batch_v1_client.create_namespaced_job(
+            namespace=self.namespace, body=job
+        )
+        logger.debug(response)
+        return response["metadata"]["name"]
 
     def delete_job(self, job: kubernetes.client.V1Job):
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
-            name=job['metadata']['name'],
-            namespace=self.namespace,
+            name=job["metadata"]["name"], namespace=self.namespace
         )
         logger.debug(response)
 
     def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
-            self.namespace,
-            label_selector="app.kubernetes.io/managed-by=foobarba",
+            self.namespace, label_selector=self.signature_generator.label_selector
         )
-        yield from response['items']
-        while '_continue' in response['metadata']:
+        yield from response["items"]
+        while "_continue" in response["metadata"]:
             response = batch_v1_client.list_namespaced_job(
                 self.namespace,
-                _continue=response['metadata']['_continue'],
+                # TODO: Fix this weird mixing of json/property access
+                _continue=response["metadata"]["_continue"],
             )
-            yield from response['items']
+            yield from response["items"]
 
-    def run_forever(self):
+    def is_old_job(self, job: kubernetes.client.V1Job, retention_period_sec: int) -> bool:
+        if job.status.completion_time:
+            completed_ts = datetime.timestamp(job.status.completion_time)
+            if completed_ts + self.retention_period_sec <= time.time():
+                return True
+        return False
+
+    def delete_old_jobs(self, retention_period_sec: int = 3600):
+        for job in self.fetch_jobs():
+            if self.is_old_job(job, retention_period_sec):
+                self.delete(job)
+
+    def run_background_cleanup(
+        self, interval_sec: int = 60, retention_period_sec: int = 3600
+    ):
         while True:
             with self._lock:
-                if self._stopped :
+                if self._stopped:
                     return
             try:
-                self.delete_stale_jobs()
-                time.sleep(5)
+                self.delete_old_jobs(retention_period_sec)
+                time.sleep(interval_sec)
             except Exception as err:
                 logger.warning(err, exc_info=True)
 
