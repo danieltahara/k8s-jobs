@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 import logging
+import secrets 
 import threading
 import time
 from typing import Callable, Dict, Iterator
@@ -20,7 +21,7 @@ class JobConfigSource(ABC):
         raise NotImplementedError()
 
 
-class SimpleConfigSource(JobConfigSource):
+class StaticJobConfigSource(JobConfigSource):
     """
     Static config source that returns the initialized dict
     """
@@ -45,11 +46,12 @@ class YamlFileConfigSource(JobConfigSource):
             return yaml.safe_load(f)
 
 
-class JobSignatureGenerator:
+class JobSigner:
     """
-    A job signature generator will add a metadata item to a job to identify it as being created by a
-    particular caller, and return a corresponding label selector for such jobs
+    A job signer will add a metadata label to a job to identify it as being created by a particular
+    caller, and return a corresponding label selector for such jobs
     """
+    LABEL_KEY = "app.kubernetes.io/managed-by"
 
     def __init__(self, signature: str):
         """
@@ -58,19 +60,18 @@ class JobSignatureGenerator:
         """
         self.signature = signature
 
-    def add_signature(self, job: kubernetes.client.V1Job):
-        job["metadata"]["labels"]["app.kubernetes.io/managed-by"] = self.signature
+    def sign(self, job: kubernetes.client.V1Job):
+        kubernetes.client.V1ObjectMeta
+        if not job.metadata.labels:
+            job.metadata.labels = {}
+        job.metadata.labels[self.LABEL_KEY] = self.signature
 
     @property
     def label_selector(self) -> str:
-        return (f"app.kubernetes.io/managed-by={self.signature}",)
+        return f"{self.LABEL_KEY}={self.signature}"
 
 
 class JobGenerator:
-    @staticmethod
-    def generate_name_suffix() -> str:
-        return "123"
-
     def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
 
@@ -79,7 +80,7 @@ class JobGenerator:
         Generates a new job spec with a unique name
         """
         config = self.config_source.get()
-        config["metadata"]["name"] += self.generate_name_suffix()
+        config.metadata.name += secrets.token_hex()
         return config
 
 
@@ -97,13 +98,13 @@ class JobManager:
         self,
         client: kubernetes.client,
         namespace: str,
-        signature_generator: JobSignatureGenerator,
+        signer: JobSigner,
         job_generators: Dict[str, JobGenerator],
     ):
 
         self.client = client
         self.namespace = namespace
-        self.signature_generator = signature_generator
+        self.signer = signer
         self.job_generators = job_generators
 
     def create_job(self, job_name: str) -> str:
@@ -111,7 +112,7 @@ class JobManager:
         Spawn a job for the given job_name
         """
         job = self.job_generators[job_name].generate()
-        self.signature_generator.add_signature(job)
+        self.signer.sign(job)
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
             namespace=self.namespace, body=job
@@ -129,7 +130,7 @@ class JobManager:
     def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
-            self.namespace, label_selector=self.signature_generator.label_selector
+            self.namespace, label_selector=self.signer.label_selector
         )
         yield from response["items"]
         while "_continue" in response["metadata"]:
