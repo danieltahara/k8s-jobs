@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 import logging
 import threading
+import time
+from typing import Iterator
 import yaml
 
 import kubernetes
@@ -61,8 +64,8 @@ class JobCreator:
         """
         Creates a new job and returns its name
         """
-        batch_v1_client = self.client.BatchV1Api()
         job = self.generate()
+        batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
             namespace=self.namespace, body=job
         )
@@ -75,31 +78,67 @@ class JobCreator:
         """
         config = self.config_source.get()
         config["metadata"]["name"] += self.generate_name_suffix()
+        config["metadata"]["labels"]["app.kubernetes.io/managed-by"] = "foobarba"
         return config
+
+# TODO: JobDeleter. Then make JobManager comprise them
 
 class JobManager:
     """
-    A JobManager is responsible for managing jobs, terminating or cleaning up jobs that have
-    exceeded a timeout or grace period.
+    A JobManager is responsible for managing jobs, cleaning up errored or completed jobs after a
+    grace period.
+
+    Job timeouts are left to the creators of job specs, by setting .spec.activeDeadlineSeconds. Job
+    retention is free to be implemented by setting .spec.ttlSecondsAfterFinished, but this is still
+    in alpha as of k8s v1.12
     """
 
-    def __init__(self, client: kubernetes.client, timeout_sec: int,  retention_period_sec: int):
+    def __init__(self, client: kubernetes.client, namespace: str, retention_period_sec: int):
         self.client = client
-        self.timeout_sec = timeout_sec
         self.retention_period_sec = retention_period_sec
 
         self._lock = threading.Lock()
         self._stopped = False
-    
-    def run_once(self):
-        pass
+
+    def delete_stale_jobs(self):
+        for job in self.fetch_jobs():
+            if job.status.completion_time:
+                completed_ts = datetime.timestamp(job.status.completion_time)
+                if completed_ts + self.retention_period_sec <= time.time():
+                    self.delete_job(job)
+
+    def delete_job(self, job: kubernetes.client.V1Job):
+        batch_v1_client = self.client.BatchV1Api()
+        response = batch_v1_client.delete_namespaced_job(
+            name=job['metadata']['name'],
+            namespace=self.namespace,
+        )
+        logger.debug(response)
+
+    def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
+        batch_v1_client = self.client.BatchV1Api()
+        response = batch_v1_client.list_namespaced_job(
+            self.namespace,
+            label_selector="app.kubernetes.io/managed-by=foobarba",
+        )
+        yield from response['items']
+        while '_continue' in response['metadata']:
+            response = batch_v1_client.list_namespaced_job(
+                self.namespace,
+                _continue=response['metadata']['_continue'],
+            )
+            yield from response['items']
 
     def run_forever(self):
         while True:
             with self._lock:
                 if self._stopped :
                     return
-            self.run_once()
+            try:
+                self.delete_stale_jobs()
+                time.sleep(5)
+            except Exception as err:
+                logger.warning(err, exc_info=True)
 
     def stop(self):
         with self._lock:
