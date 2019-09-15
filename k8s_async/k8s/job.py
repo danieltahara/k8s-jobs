@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 import threading
 import time
-from typing import Dict, Iterator
+from typing import Callable, Dict, Iterator
 import yaml
 
 import kubernetes
@@ -106,9 +106,6 @@ class JobManager:
         self.signature_generator = signature_generator
         self.job_generators = job_generators
 
-        self._lock = threading.Lock()
-        self._stopped = False
-
     def create_job(self, job_name: str) -> str:
         """
         Spawn a job for the given job_name
@@ -157,17 +154,34 @@ class JobManager:
 
     def run_background_cleanup(
         self, interval_sec: int = 60, retention_period_sec: int = 3600
-    ):
-        while True:
-            with self._lock:
-                if self._stopped:
-                    return
-            try:
-                self.delete_old_jobs(retention_period_sec)
-                time.sleep(interval_sec)
-            except Exception as err:
-                logger.warning(err, exc_info=True)
+    ) -> Callable[[None], None]:
+        """
+        Starts a background thread that cleans up jobs older than retention_period_sec in a loop,
+        waiting interval_sec
 
-    def stop(self):
-        with self._lock:
-            self._stopped = True
+        Returns:
+            Callable to stop the cleanup loop
+        """
+        _lock = threading.Lock()
+        _stopped = False
+
+        def run():
+            while True:
+                with self._lock:
+                    if self._stopped:
+                        return
+                try:
+                    self.delete_old_jobs(retention_period_sec)
+                    time.sleep(interval_sec)
+                except Exception as err:
+                    logger.warning(err, exc_info=True)
+
+        t = threading.Thread(target=run)
+        t.start()
+
+        def stop():
+            with _lock:
+                nonlocal _stopped
+                _stopped = True
+
+        return stop
