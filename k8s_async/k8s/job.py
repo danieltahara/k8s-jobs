@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import copy
 from datetime import datetime
 import logging
 import secrets
@@ -30,7 +31,7 @@ class StaticJobConfigSource(JobConfigSource):
         self.config = config
 
     def get(self) -> kubernetes.client.V1Job:
-        return self.config
+        return copy.deepcopy(self.config)
 
 
 class YamlFileConfigSource(JobConfigSource):
@@ -81,7 +82,7 @@ class JobGenerator:
         Generates a new job spec with a unique name
         """
         config = self.config_source.get()
-        config.metadata.name += secrets.token_hex()
+        config.metadata.name += f"-{secrets.token_hex(24)}"
         return config
 
 
@@ -119,12 +120,12 @@ class JobManager:
             namespace=self.namespace, body=job
         )
         logger.debug(response)
-        return response["metadata"]["name"]
+        return response.metadata.name
 
     def delete_job(self, job: kubernetes.client.V1Job):
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
-            name=job["metadata"]["name"], namespace=self.namespace
+            name=job.metadata.name, namespace=self.namespace
         )
         logger.debug(response)
 
@@ -133,14 +134,13 @@ class JobManager:
         response = batch_v1_client.list_namespaced_job(
             self.namespace, label_selector=self.signer.label_selector
         )
-        yield from response["items"]
-        while "_continue" in response["metadata"]:
+        yield from response.items
+        while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
                 self.namespace,
-                # TODO: Fix this weird mixing of json/property access
-                _continue=response["metadata"]["_continue"],
+                _continue=response.metadata._continue,
             )
-            yield from response["items"]
+            yield from response.items
 
     def is_old_job(
         self, job: kubernetes.client.V1Job, retention_period_sec: int
