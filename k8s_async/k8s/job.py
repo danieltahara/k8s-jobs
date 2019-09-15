@@ -5,7 +5,7 @@ import logging
 import secrets
 import threading
 import time
-from typing import Callable, Dict, Iterator
+from typing import Callable, Dict, Iterator, Union
 import yaml
 
 import kubernetes
@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 class JobConfigSource(ABC):
     @abstractmethod
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
         """
-        Returns a config dict of the yaml-loaded job spec
+        Returns a V1Job object or a Dict with the same structure
         """
         raise NotImplementedError()
 
@@ -30,7 +30,7 @@ class StaticJobConfigSource(JobConfigSource):
     def __init__(self, config: kubernetes.client.V1Job):
         self.config = config
 
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
         return copy.deepcopy(self.config)
 
 
@@ -42,7 +42,7 @@ class YamlFileConfigSource(JobConfigSource):
     def __init__(self, path: str):
         self.path = path
 
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
         with open(self.path, "r") as f:
             return yaml.safe_load(f)
 
@@ -62,11 +62,15 @@ class JobSigner:
         """
         self.signature = signature
 
-    def sign(self, job: kubernetes.client.V1Job):
-        kubernetes.client.V1ObjectMeta
-        if not job.metadata.labels:
-            job.metadata.labels = {}
-        job.metadata.labels[self.LABEL_KEY] = self.signature
+    def sign(self, job: Union[kubernetes.client.V1Job, Dict]):
+        if isinstance(job, kubernetes.client.V1Job):
+            if not job.metadata.labels:
+                job.metadata.labels = {}
+            job.metadata.labels[self.LABEL_KEY] = self.signature
+        else:
+            if "labels" not in job["metadata"]:
+                job["metadata"]["labels"] = {}
+            job["metadata"]["labels"][self.LABEL_KEY] = self.signature
 
     @property
     def label_selector(self) -> str:
@@ -132,13 +136,12 @@ class JobManager:
     def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
         batch_v1_client = self.client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
-            self.namespace, label_selector=self.signer.label_selector
+            namespace=self.namespace, label_selector=self.signer.label_selector
         )
         yield from response.items
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
-                self.namespace,
-                _continue=response.metadata._continue,
+                namespace=self.namespace, _continue=response.metadata._continue
             )
             yield from response.items
 
@@ -176,9 +179,9 @@ class JobManager:
                         return
                 try:
                     self.delete_old_jobs(retention_period_sec)
-                    time.sleep(interval_sec)
                 except Exception as err:
                     logger.warning(err, exc_info=True)
+                time.sleep(interval_sec)
 
         t = threading.Thread(target=run)
         t.start()

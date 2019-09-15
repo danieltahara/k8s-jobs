@@ -30,14 +30,27 @@ class TestConfigSource:
 
 
 class TestJobSignatureGenerator:
-    def test_sets_label(self):
+    def test_sets_label_job(self):
         signature = "hehehe"
         signer = JobSigner(signature)
         job = V1Job(metadata=V1ObjectMeta())
 
         signer.sign(job)
 
-        assert job.metadata.labels[JobSigner.LABEL_KEY] == signature
+        assert (
+            job.metadata.labels[JobSigner.LABEL_KEY] == signature
+        ), "Metadata label not set"
+
+    def test_sets_label_dict(self):
+        signature = "hehehe"
+        signer = JobSigner(signature)
+        job = {"metadata": {}}
+
+        signer.sign(job)
+
+        assert (
+            job["metadata"]["labels"][JobSigner.LABEL_KEY] == signature
+        ), "Metadata label not set"
 
     def test_label_selector(self):
         signature = "woahhhh"
@@ -66,7 +79,9 @@ class TestJobManager:
     def test_create_job(self):
         mock_client = Mock()
         mock_batch_client = mock_client.BatchV1Api.return_value
-        mock_batch_client.create_namespaced_job.return_value = V1Job(metadata=V1ObjectMeta())
+        mock_batch_client.create_namespaced_job.return_value = V1Job(
+            metadata=V1ObjectMeta()
+        )
         namespace = "hellomoto"
         g1 = Mock()
         g2 = Mock()
@@ -82,15 +97,12 @@ class TestJobManager:
         g1.assert_not_called()
         g2.generate.assert_called_once()
         mock_batch_client.create_namespaced_job.assert_called_once_with(
-            namespace=namespace, body=ANY,
+            namespace=namespace, body=ANY
         )
 
     def test_create_job_unknown(self):
         manager = JobManager(
-            Mock(),
-            namespace="boohoo",
-            signer=Mock(),
-            job_generators={},
+            Mock(), namespace="boohoo", signer=Mock(), job_generators={}
         )
 
         with pytest.raises(KeyError):
