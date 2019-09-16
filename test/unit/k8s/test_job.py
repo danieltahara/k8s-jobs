@@ -2,7 +2,15 @@ from datetime import datetime, timedelta
 from unittest.mock import ANY, Mock, patch
 import yaml
 
-from kubernetes.client import V1Job, V1JobList, V1JobStatus, V1ListMeta, V1ObjectMeta
+from kubernetes.client import (
+    V1DeleteOptions,
+    V1Job,
+    V1JobCondition,
+    V1JobList,
+    V1JobStatus,
+    V1ListMeta,
+    V1ObjectMeta,
+)
 import pytest
 
 from k8s_async.k8s.job import (
@@ -15,9 +23,9 @@ from k8s_async.k8s.job import (
 
 
 @pytest.fixture
-def MockBatchV1Api():
+def mock_batch_client():
     with patch("k8s_async.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
-        yield mock_batch_v1_api
+        yield mock_batch_v1_api.return_value
 
 
 class TestConfigSource:
@@ -92,8 +100,7 @@ class TestJobGenerator:
 
 
 class TestJobManager:
-    def test_create_job(self, MockBatchV1Api):
-        mock_batch_client = MockBatchV1Api.return_value
+    def test_create_job(self, mock_batch_client):
         mock_batch_client.create_namespaced_job.return_value = V1Job(
             metadata=V1ObjectMeta()
         )
@@ -118,22 +125,83 @@ class TestJobManager:
         with pytest.raises(KeyError):
             manager.create_job("unknown")
 
-    def test_is_old_job(self):
+    def test_delete_job(self, mock_batch_client):
+        namespace = "whee"
+        name = "jobname"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+
+        manager.delete_job(V1Job(metadata=V1ObjectMeta(name=name)))
+
+        mock_batch_client.delete_namespaced_job.assert_called_once_with(
+            name=name,
+            namespace=namespace,
+            body=V1DeleteOptions(propagation_policy="Foreground"),
+        )
+
+    def test_is_candidate_for_deletion(self):
         manager = JobManager(namespace="fake", signer=Mock(), job_generators={})
-
-        job = V1Job(status=V1JobStatus())
-        assert not manager.is_old_job(job, 100)
-
         now = datetime.now()
-        job = V1Job(status=V1JobStatus(completion_time=now))
-        assert not manager.is_old_job(job, 100)
-
         before = now - timedelta(seconds=101)
-        job = V1Job(status=V1JobStatus(completion_time=before))
-        assert manager.is_old_job(job, 100)
 
-    def test_fetch_jobs(self, MockBatchV1Api):
-        mock_batch_client = MockBatchV1Api.return_value
+        job = V1Job(status=V1JobStatus(conditions=[]))
+        assert not manager.is_candidate_for_deletion(job, 100)
+
+        job = V1Job(status=V1JobStatus(conditions=[], completion_time=now))
+        assert not manager.is_candidate_for_deletion(job, 100)
+
+        job = V1Job(
+            status=V1JobStatus(
+                conditions=[
+                    V1JobCondition(
+                        last_transition_time=now, status="True", type="Complete"
+                    )
+                ]
+            )
+        )
+        assert not manager.is_candidate_for_deletion(
+            job, 100
+        ), "A recently completed job should not be deleted"
+
+        job = V1Job(
+            status=V1JobStatus(
+                conditions=[
+                    V1JobCondition(
+                        last_transition_time=before, status="True", type="Complete"
+                    )
+                ]
+            )
+        )
+        assert manager.is_candidate_for_deletion(
+            job, 100
+        ), "Job that completed a while ago should be deleted"
+
+        job = V1Job(
+            status=V1JobStatus(
+                conditions=[
+                    V1JobCondition(
+                        last_transition_time=before, status="False", type="Complete"
+                    )
+                ]
+            )
+        )
+        assert not manager.is_candidate_for_deletion(
+            job, 100
+        ), "False job status conditions should be ignored"
+
+        job = V1Job(
+            status=V1JobStatus(
+                conditions=[
+                    V1JobCondition(
+                        last_transition_time=before, status="True", type="Failed"
+                    )
+                ]
+            )
+        )
+        assert manager.is_candidate_for_deletion(
+            job, 100
+        ), "Job that failed a while ago should be deleted"
+
+    def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
             items=[1], metadata=V1ListMeta()
         )
@@ -146,8 +214,7 @@ class TestJobManager:
             namespace=namespace, label_selector=signer.label_selector
         )
 
-    def test_fetch_jobs_continue(self, MockBatchV1Api):
-        mock_batch_client = MockBatchV1Api.return_value
+    def test_fetch_jobs_continue(self, mock_batch_client):
         _continue = "xyz"
         mock_batch_client.list_namespaced_job.side_effect = [
             V1JobList(items=[1], metadata=V1ListMeta(_continue=_continue)),

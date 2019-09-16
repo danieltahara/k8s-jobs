@@ -129,8 +129,7 @@ class JobManager:
         response = batch_v1_client.delete_namespaced_job(
             name=job.metadata.name,
             namespace=self.namespace,
-            # FIXME: Test
-            # Need deletes to propagate to the created pod.
+            # Need deletes to propagate to the created pod(s).
             body=client.V1DeleteOptions(propagation_policy="Foreground"),
         )
         logger.debug(response)
@@ -147,15 +146,20 @@ class JobManager:
             )
             yield from response.items
 
-    # FIXME: Test
-    def is_old_job(self, job: client.V1Job, retention_period_sec: int) -> bool:
+    def is_candidate_for_deletion(
+        self, job: client.V1Job, retention_period_sec: int
+    ) -> bool:
+        """
+        Is candidate for deletion inspects the job status, and if it is in a terminal state and has
+        been in that state more than retention_period_sec, deletes the job
+        """
         for condition in job.status.conditions:
-            if condition.status != 'True':
+            if condition.status != "True":
                 continue
             if condition.type not in ["Complete", "Failed"]:
                 continue
             last_transition_ts = datetime.timestamp(condition.last_transition_time)
-            if last_transition_ts + retention_period_sec >time.time():
+            if last_transition_ts + retention_period_sec > time.time():
                 continue
             return True
         return False
@@ -163,7 +167,7 @@ class JobManager:
     def delete_old_jobs(self, retention_period_sec: int = 3600):
         for job in self.fetch_jobs():
             try:
-                if self.is_old_job(job, retention_period_sec):
+                if self.is_candidate_for_deletion(job, retention_period_sec):
                     self.delete_job(job)
             # FIXME: test
             except client.rest.ApiException:
