@@ -1,13 +1,15 @@
 from abc import ABC, abstractmethod
 import copy
 from datetime import datetime
+from io import StringIO
 import logging
 import secrets
 import threading
 import time
-from typing import Callable, Dict, Iterator, Union
+from typing import Callable, Dict, Iterator, Optional, Union
 import yaml
 
+import jinja2
 from kubernetes import client
 
 logger = logging.getLogger(__name__)
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class JobConfigSource(ABC):
     @abstractmethod
-    def get(self) -> Union[client.V1Job, Dict]:
+    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
         """
         Returns a V1Job object or a Dict with the same structure
         """
@@ -24,27 +26,29 @@ class JobConfigSource(ABC):
 
 class StaticJobConfigSource(JobConfigSource):
     """
-    Static config source that returns the initialized dict
+    Static config source that returns the initialized dict. It NOPs against templates
     """
 
     def __init__(self, config: Union[client.V1Job, Dict]):
         self.config = config
 
-    def get(self) -> Union[client.V1Job, Dict]:
+    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
         return copy.deepcopy(self.config)
 
 
 class YamlFileConfigSource(JobConfigSource):
     """
-    ConfigSource that reads and returns parsed yaml from a file
+    ConfigSource that reads and returns parsed yaml from a file, with the given template arguments
     """
 
     def __init__(self, path: str):
         self.path = path
 
-    def get(self) -> Union[client.V1Job, Dict]:
-        with open(self.path, "r") as f:
-            return yaml.safe_load(f)
+    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
+        jinja2_environment = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
+        rendered = jinja2_environment.get_template(self.path).render(template_args or {})
+        stream = StringIO(rendered)
+        return yaml.safe_load(stream)
 
 
 class JobSigner:
@@ -111,11 +115,12 @@ class JobManager:
         self.signer = signer
         self.job_generators = job_generators
 
-    def create_job(self, job_name: str) -> str:
+    # FIXME: Tests
+    def create_job(self, job_name: str, template_args: Optional[Dict]=None) -> str:
         """
         Spawn a job for the given job_name
         """
-        job = self.job_generators[job_name].generate()
+        job = self.job_generators[job_name].generate(template_args or {})
         self.signer.sign(job)
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
