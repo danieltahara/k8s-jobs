@@ -27,7 +27,7 @@ class StaticJobConfigSource(JobConfigSource):
     Static config source that returns the initialized dict
     """
 
-    def __init__(self, config: client.V1Job):
+    def __init__(self, config: Union[client.V1Job, Dict]):
         self.config = config
 
     def get(self) -> Union[client.V1Job, Dict]:
@@ -81,12 +81,15 @@ class JobGenerator:
     def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
 
-    def generate(self) -> client.V1Job:
+    def generate(self) -> Union[client.V1Job, Dict]:
         """
         Generates a new job spec with a unique name
         """
         config = self.config_source.get()
-        config.metadata.name += f"-{secrets.token_hex(24)}"
+        if isinstance(config, client.V1Job):
+            config.metadata.name += f"-{secrets.token_hex(24)}"
+        else:
+            config["metadata"]["name"] += f"-{secrets.token_hex(24)}"
         return config
 
 
@@ -101,10 +104,7 @@ class JobManager:
     """
 
     def __init__(
-        self,
-        namespace: str,
-        signer: JobSigner,
-        job_generators: Dict[str, JobGenerator],
+        self, namespace: str, signer: JobSigner, job_generators: Dict[str, JobGenerator]
     ):
 
         self.namespace = namespace
@@ -127,7 +127,11 @@ class JobManager:
     def delete_job(self, job: client.V1Job):
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
-            name=job.metadata.name, namespace=self.namespace
+            name=job.metadata.name,
+            namespace=self.namespace,
+            # FIXME: Test
+            # Need deletes to propagate to the created pod.
+            body=client.V1DeleteOptions(propagation_policy="Foreground"),
         )
         logger.debug(response)
 
@@ -143,9 +147,8 @@ class JobManager:
             )
             yield from response.items
 
-    def is_old_job(
-        self, job: client.V1Job, retention_period_sec: int
-    ) -> bool:
+    # FIXME: Completed ts is not set for failed jobs
+    def is_old_job(self, job: client.V1Job, retention_period_sec: int) -> bool:
         if job.status.completion_time:
             completed_ts = datetime.timestamp(job.status.completion_time)
             if completed_ts + retention_period_sec <= time.time():
@@ -155,7 +158,7 @@ class JobManager:
     def delete_old_jobs(self, retention_period_sec: int = 3600):
         for job in self.fetch_jobs():
             if self.is_old_job(job, retention_period_sec):
-                self.delete(job)
+                self.delete_job(job)
 
     def run_background_cleanup(
         self, interval_sec: int = 60, retention_period_sec: int = 3600

@@ -13,10 +13,12 @@ from k8s_async.k8s.job import (
     YamlFileConfigSource,
 )
 
+
 @pytest.fixture
 def MockBatchV1Api():
-    with patch('k8s_async.k8s.job.client.BatchV1Api') as mock_batch_v1_api:
+    with patch("k8s_async.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api
+
 
 class TestConfigSource:
     def test_yaml_config_source_reloads(self, request, tmp_path):
@@ -79,6 +81,15 @@ class TestJobGenerator:
             j1.metadata.name != j2.metadata.name
         ), "Each generated job must have a unique name"
 
+    def test_generate_with_dict_config(self):
+        job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
+        generator = JobGenerator(StaticJobConfigSource(job.to_dict()))
+
+        j = generator.generate()
+        assert (
+            j["metadata"]["name"] != job.metadata.name
+        ), "Should have mutated job name"
+
 
 class TestJobManager:
     def test_create_job(self, MockBatchV1Api):
@@ -90,9 +101,7 @@ class TestJobManager:
         g1 = Mock()
         g2 = Mock()
         manager = JobManager(
-            namespace=namespace,
-            signer=Mock(),
-            job_generators={"g1": g1, "g2": g2},
+            namespace=namespace, signer=Mock(), job_generators={"g1": g1, "g2": g2}
         )
 
         manager.create_job("g2")
@@ -104,9 +113,7 @@ class TestJobManager:
         )
 
     def test_create_job_unknown(self):
-        manager = JobManager(
-            namespace="boohoo", signer=Mock(), job_generators={}
-        )
+        manager = JobManager(namespace="boohoo", signer=Mock(), job_generators={})
 
         with pytest.raises(KeyError):
             manager.create_job("unknown")
@@ -132,9 +139,7 @@ class TestJobManager:
         )
         namespace = "hellomoto"
         signer = JobSigner("foo")
-        manager = JobManager(
-            namespace=namespace, signer=signer, job_generators={}
-        )
+        manager = JobManager(namespace=namespace, signer=signer, job_generators={})
 
         assert len(list(manager.fetch_jobs())) == 1
         mock_batch_client.list_namespaced_job.assert_called_once_with(
@@ -149,9 +154,7 @@ class TestJobManager:
             V1JobList(items=[2], metadata=V1ListMeta()),
         ]
         namespace = "blech"
-        manager = JobManager(
-            namespace=namespace, signer=Mock(), job_generators={}
-        )
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
 
         assert len(list(manager.fetch_jobs())) == 2
         assert mock_batch_client.list_namespaced_job.call_count == 2

@@ -11,6 +11,6 @@ spec:
         command: ["/bin/sh"]
         args: ["exit", "1"]
       restartPolicy: Never
-  backoffLimit: 4
+  backoffLimit: 0
   activeDeadlineSeconds: 60
 
