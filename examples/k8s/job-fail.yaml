@@ -1,0 +1,15 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fail
+spec:
+  template:
+    spec:
+      containers:
+      - name: fail
+        image: ubuntu
+        command: ["/bin/sh"]
+        args: ["exit", "1"]
+      restartPolicy: Never
+  backoffLimit: 0
+  activeDeadlineSeconds: 600

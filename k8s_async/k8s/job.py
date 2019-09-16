@@ -5,19 +5,19 @@ import logging
 import secrets
 import threading
 import time
-from typing import Callable, Dict, Iterator
+from typing import Callable, Dict, Iterator, Union
 import yaml
 
-import kubernetes
+from kubernetes import client
 
 logger = logging.getLogger(__name__)
 
 
 class JobConfigSource(ABC):
     @abstractmethod
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[client.V1Job, Dict]:
         """
-        Returns a config dict of the yaml-loaded job spec
+        Returns a V1Job object or a Dict with the same structure
         """
         raise NotImplementedError()
 
@@ -27,10 +27,10 @@ class StaticJobConfigSource(JobConfigSource):
     Static config source that returns the initialized dict
     """
 
-    def __init__(self, config: kubernetes.client.V1Job):
+    def __init__(self, config: Union[client.V1Job, Dict]):
         self.config = config
 
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[client.V1Job, Dict]:
         return copy.deepcopy(self.config)
 
 
@@ -42,7 +42,7 @@ class YamlFileConfigSource(JobConfigSource):
     def __init__(self, path: str):
         self.path = path
 
-    def get(self) -> kubernetes.client.V1Job:
+    def get(self) -> Union[client.V1Job, Dict]:
         with open(self.path, "r") as f:
             return yaml.safe_load(f)
 
@@ -62,11 +62,15 @@ class JobSigner:
         """
         self.signature = signature
 
-    def sign(self, job: kubernetes.client.V1Job):
-        kubernetes.client.V1ObjectMeta
-        if not job.metadata.labels:
-            job.metadata.labels = {}
-        job.metadata.labels[self.LABEL_KEY] = self.signature
+    def sign(self, job: Union[client.V1Job, Dict]):
+        if isinstance(job, client.V1Job):
+            if not job.metadata.labels:
+                job.metadata.labels = {}
+            job.metadata.labels[self.LABEL_KEY] = self.signature
+        else:
+            if "labels" not in job["metadata"]:
+                job["metadata"]["labels"] = {}
+            job["metadata"]["labels"][self.LABEL_KEY] = self.signature
 
     @property
     def label_selector(self) -> str:
@@ -77,12 +81,15 @@ class JobGenerator:
     def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
 
-    def generate(self) -> kubernetes.client.V1Job:
+    def generate(self) -> Union[client.V1Job, Dict]:
         """
         Generates a new job spec with a unique name
         """
         config = self.config_source.get()
-        config.metadata.name += f"-{secrets.token_hex(24)}"
+        if isinstance(config, client.V1Job):
+            config.metadata.name += f"-{secrets.token_hex(24)}"
+        else:
+            config["metadata"]["name"] += f"-{secrets.token_hex(24)}"
         return config
 
 
@@ -97,14 +104,9 @@ class JobManager:
     """
 
     def __init__(
-        self,
-        client: kubernetes.client,
-        namespace: str,
-        signer: JobSigner,
-        job_generators: Dict[str, JobGenerator],
+        self, namespace: str, signer: JobSigner, job_generators: Dict[str, JobGenerator]
     ):
 
-        self.client = client
         self.namespace = namespace
         self.signer = signer
         self.job_generators = job_generators
@@ -115,46 +117,60 @@ class JobManager:
         """
         job = self.job_generators[job_name].generate()
         self.signer.sign(job)
-        batch_v1_client = self.client.BatchV1Api()
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
             namespace=self.namespace, body=job
         )
         logger.debug(response)
         return response.metadata.name
 
-    def delete_job(self, job: kubernetes.client.V1Job):
-        batch_v1_client = self.client.BatchV1Api()
+    def delete_job(self, job: client.V1Job):
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
-            name=job.metadata.name, namespace=self.namespace
+            name=job.metadata.name,
+            namespace=self.namespace,
+            # Need deletes to propagate to the created pod(s).
+            body=client.V1DeleteOptions(propagation_policy="Foreground"),
         )
         logger.debug(response)
 
-    def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
-        batch_v1_client = self.client.BatchV1Api()
+    def fetch_jobs(self) -> Iterator[client.V1Job]:
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
-            self.namespace, label_selector=self.signer.label_selector
+            namespace=self.namespace, label_selector=self.signer.label_selector
         )
         yield from response.items
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
-                self.namespace,
-                _continue=response.metadata._continue,
+                namespace=self.namespace, _continue=response.metadata._continue
             )
             yield from response.items
 
-    def is_old_job(
-        self, job: kubernetes.client.V1Job, retention_period_sec: int
+    def is_candidate_for_deletion(
+        self, job: client.V1Job, retention_period_sec: int
     ) -> bool:
-        if job.status.completion_time:
-            completed_ts = datetime.timestamp(job.status.completion_time)
-            if completed_ts + self.retention_period_sec <= time.time():
-                return True
+        """
+        Is candidate for deletion inspects the job status, and if it is in a terminal state and has
+        been in that state more than retention_period_sec, deletes the job
+        """
+        for condition in job.status.conditions:
+            if condition.status != "True":
+                continue
+            if condition.type not in ["Complete", "Failed"]:
+                continue
+            last_transition_ts = datetime.timestamp(condition.last_transition_time)
+            if last_transition_ts + retention_period_sec > time.time():
+                continue
+            return True
         return False
 
     def delete_old_jobs(self, retention_period_sec: int = 3600):
         for job in self.fetch_jobs():
-            if self.is_old_job(job, retention_period_sec):
-                self.delete(job)
+            try:
+                if self.is_candidate_for_deletion(job, retention_period_sec):
+                    self.delete_job(job)
+            except client.rest.ApiException:
+                logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
     def run_background_cleanup(
         self, interval_sec: int = 60, retention_period_sec: int = 3600
@@ -176,9 +192,9 @@ class JobManager:
                         return
                 try:
                     self.delete_old_jobs(retention_period_sec)
-                    time.sleep(interval_sec)
                 except Exception as err:
                     logger.warning(err, exc_info=True)
+                time.sleep(interval_sec)
 
         t = threading.Thread(target=run)
         t.start()

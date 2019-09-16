@@ -10,18 +10,12 @@ implementation that can stand in as a replacement for AWS Batch and trigger jobs
 What's Inside
 -------------
 
-Worker
-++++++
-
-The worker consists of a configurable queue consumer that reads messages off of a queue and either
-processes a single message before exiting, or runs as a daemon or until some stop condition is met.
-
-The queue libraries can be used standalone, but they are primarily intended for use in the context
-of a 'worker' as the basis of a one-off Kubernetes job or a daemon as part of a Kubernetes
-deployment.
-
 Server
 ++++++
+
+The server is primarily intended as a replacement for and extension to AWS Batch.
+
+TODO:
 
 The server listens on a route for job creation requests, much in the same way AWS batch might be
 implemented under the hood. Given a request, it will do some combination of enqueueing the message
@@ -32,7 +26,20 @@ would obviate the need for writing the job message to a queue. Alternatively, a 
 could be configured with a set of worker daemons, in which case the per-job capacity is unnecessary
 and a job pod need not be created.
 
+Worker
+++++++
+
+TODO:
+
+The worker consists of a configurable queue consumer that reads messages off of a queue and either
+processes a single message before exiting, or runs as a daemon or until some stop condition is met.
+
+The queue libraries can be used standalone, but they are primarily intended for use in the context
+of a 'worker' as the basis of a one-off Kubernetes job or a daemon as part of a Kubernetes
+deployment.
+
+
 QuickStart
 ----------
 
-TODO:
+See examples to get you going.

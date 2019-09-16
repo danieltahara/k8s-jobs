@@ -1,0 +1,15 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: timeout
+spec:
+  template:
+    spec:
+      containers:
+      - name: timeout
+        image: ubuntu
+        command: ["/bin/sh"]
+        args: ["sleep", "1000"]
+      restartPolicy: Never
+  backoffLimit: 0
+  activeDeadlineSeconds: 10
