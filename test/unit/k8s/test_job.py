@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from unittest.mock import ANY, Mock
+from unittest.mock import ANY, Mock, patch
 import yaml
 
 from kubernetes.client import V1Job, V1JobList, V1JobStatus, V1ListMeta, V1ObjectMeta
@@ -13,6 +13,10 @@ from k8s_async.k8s.job import (
     YamlFileConfigSource,
 )
 
+@pytest.fixture
+def MockBatchV1Api():
+    with patch('k8s_async.k8s.job.client.BatchV1Api') as mock_batch_v1_api:
+        yield mock_batch_v1_api
 
 class TestConfigSource:
     def test_yaml_config_source_reloads(self, request, tmp_path):
@@ -77,9 +81,8 @@ class TestJobGenerator:
 
 
 class TestJobManager:
-    def test_create_job(self):
-        mock_client = Mock()
-        mock_batch_client = mock_client.BatchV1Api.return_value
+    def test_create_job(self, MockBatchV1Api):
+        mock_batch_client = MockBatchV1Api.return_value
         mock_batch_client.create_namespaced_job.return_value = V1Job(
             metadata=V1ObjectMeta()
         )
@@ -87,7 +90,6 @@ class TestJobManager:
         g1 = Mock()
         g2 = Mock()
         manager = JobManager(
-            mock_client,
             namespace=namespace,
             signer=Mock(),
             job_generators={"g1": g1, "g2": g2},
@@ -103,14 +105,14 @@ class TestJobManager:
 
     def test_create_job_unknown(self):
         manager = JobManager(
-            Mock(), namespace="boohoo", signer=Mock(), job_generators={}
+            namespace="boohoo", signer=Mock(), job_generators={}
         )
 
         with pytest.raises(KeyError):
             manager.create_job("unknown")
 
     def test_is_old_job(self):
-        manager = JobManager(Mock(), namespace="fake", signer=Mock(), job_generators={})
+        manager = JobManager(namespace="fake", signer=Mock(), job_generators={})
 
         job = V1Job(status=V1JobStatus())
         assert not manager.is_old_job(job, 100)
@@ -123,16 +125,15 @@ class TestJobManager:
         job = V1Job(status=V1JobStatus(completion_time=before))
         assert manager.is_old_job(job, 100)
 
-    def test_fetch_jobs(self):
-        mock_client = Mock()
-        mock_batch_client = mock_client.BatchV1Api.return_value
+    def test_fetch_jobs(self, MockBatchV1Api):
+        mock_batch_client = MockBatchV1Api.return_value
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
             items=[1], metadata=V1ListMeta()
         )
         namespace = "hellomoto"
         signer = JobSigner("foo")
         manager = JobManager(
-            mock_client, namespace=namespace, signer=signer, job_generators={}
+            namespace=namespace, signer=signer, job_generators={}
         )
 
         assert len(list(manager.fetch_jobs())) == 1
@@ -140,9 +141,8 @@ class TestJobManager:
             namespace=namespace, label_selector=signer.label_selector
         )
 
-    def test_fetch_jobs_continue(self):
-        mock_client = Mock()
-        mock_batch_client = mock_client.BatchV1Api.return_value
+    def test_fetch_jobs_continue(self, MockBatchV1Api):
+        mock_batch_client = MockBatchV1Api.return_value
         _continue = "xyz"
         mock_batch_client.list_namespaced_job.side_effect = [
             V1JobList(items=[1], metadata=V1ListMeta(_continue=_continue)),
@@ -150,7 +150,7 @@ class TestJobManager:
         ]
         namespace = "blech"
         manager = JobManager(
-            mock_client, namespace=namespace, signer=Mock(), job_generators={}
+            namespace=namespace, signer=Mock(), job_generators={}
         )
 
         assert len(list(manager.fetch_jobs())) == 2

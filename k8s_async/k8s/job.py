@@ -8,14 +8,14 @@ import time
 from typing import Callable, Dict, Iterator, Union
 import yaml
 
-import kubernetes
+from kubernetes import client
 
 logger = logging.getLogger(__name__)
 
 
 class JobConfigSource(ABC):
     @abstractmethod
-    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
+    def get(self) -> Union[client.V1Job, Dict]:
         """
         Returns a V1Job object or a Dict with the same structure
         """
@@ -27,10 +27,10 @@ class StaticJobConfigSource(JobConfigSource):
     Static config source that returns the initialized dict
     """
 
-    def __init__(self, config: kubernetes.client.V1Job):
+    def __init__(self, config: client.V1Job):
         self.config = config
 
-    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
+    def get(self) -> Union[client.V1Job, Dict]:
         return copy.deepcopy(self.config)
 
 
@@ -42,7 +42,7 @@ class YamlFileConfigSource(JobConfigSource):
     def __init__(self, path: str):
         self.path = path
 
-    def get(self) -> Union[kubernetes.client.V1Job, Dict]:
+    def get(self) -> Union[client.V1Job, Dict]:
         with open(self.path, "r") as f:
             return yaml.safe_load(f)
 
@@ -62,8 +62,8 @@ class JobSigner:
         """
         self.signature = signature
 
-    def sign(self, job: Union[kubernetes.client.V1Job, Dict]):
-        if isinstance(job, kubernetes.client.V1Job):
+    def sign(self, job: Union[client.V1Job, Dict]):
+        if isinstance(job, client.V1Job):
             if not job.metadata.labels:
                 job.metadata.labels = {}
             job.metadata.labels[self.LABEL_KEY] = self.signature
@@ -81,7 +81,7 @@ class JobGenerator:
     def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
 
-    def generate(self) -> kubernetes.client.V1Job:
+    def generate(self) -> client.V1Job:
         """
         Generates a new job spec with a unique name
         """
@@ -102,13 +102,11 @@ class JobManager:
 
     def __init__(
         self,
-        client: kubernetes.client,
         namespace: str,
         signer: JobSigner,
         job_generators: Dict[str, JobGenerator],
     ):
 
-        self.client = client
         self.namespace = namespace
         self.signer = signer
         self.job_generators = job_generators
@@ -119,22 +117,22 @@ class JobManager:
         """
         job = self.job_generators[job_name].generate()
         self.signer.sign(job)
-        batch_v1_client = self.client.BatchV1Api()
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
             namespace=self.namespace, body=job
         )
         logger.debug(response)
         return response.metadata.name
 
-    def delete_job(self, job: kubernetes.client.V1Job):
-        batch_v1_client = self.client.BatchV1Api()
+    def delete_job(self, job: client.V1Job):
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
             name=job.metadata.name, namespace=self.namespace
         )
         logger.debug(response)
 
-    def fetch_jobs(self) -> Iterator[kubernetes.client.V1Job]:
-        batch_v1_client = self.client.BatchV1Api()
+    def fetch_jobs(self) -> Iterator[client.V1Job]:
+        batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
             namespace=self.namespace, label_selector=self.signer.label_selector
         )
@@ -146,7 +144,7 @@ class JobManager:
             yield from response.items
 
     def is_old_job(
-        self, job: kubernetes.client.V1Job, retention_period_sec: int
+        self, job: client.V1Job, retention_period_sec: int
     ) -> bool:
         if job.status.completion_time:
             completed_ts = datetime.timestamp(job.status.completion_time)
