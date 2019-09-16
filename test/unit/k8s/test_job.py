@@ -14,7 +14,7 @@ from kubernetes.client import (
 from kubernetes.client.rest import ApiException
 import pytest
 
-from k8s_async.k8s.job import (
+from k8s_jobs.k8s.job import (
     JobGenerator,
     JobManager,
     JobSigner,
@@ -25,7 +25,7 @@ from k8s_async.k8s.job import (
 
 @pytest.fixture
 def mock_batch_client():
-    with patch("k8s_async.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
+    with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
 
 

@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "k8s-async"
+name = "k8s-jobs"
 version = "0.1.0"
-description = "Async Task Execution + AWS Batch Replacement for Kubernetes"
+description = "Async Job Manager + AWS Batch Replacement for K8s"
 authors = ["Daniel Tahara <dktahara@gmail.com>"]
 license = "Apache-2.0"
 

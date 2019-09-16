@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 import sys
 
-from k8s_async.k8s.job import JobManager, JobGenerator, JobSigner, YamlFileConfigSource
+from k8s_jobs.k8s.job import JobManager, JobGenerator, JobSigner, YamlFileConfigSource
 
 from kubernetes import config
 
