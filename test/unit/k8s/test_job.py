@@ -11,6 +11,7 @@ from kubernetes.client import (
     V1ListMeta,
     V1ObjectMeta,
 )
+from kubernetes.client.rest import ApiException
 import pytest
 
 from k8s_async.k8s.job import (
@@ -200,6 +201,21 @@ class TestJobManager:
         assert manager.is_candidate_for_deletion(
             job, 100
         ), "Job that failed a while ago should be deleted"
+
+    def test_delete_old_jobs_error(self, mock_batch_client):
+        manager = JobManager(namespace="harhar", signer=Mock(), job_generators={})
+
+        with patch.object(
+            manager, "delete_job", side_effect=[ApiException, None]
+        ) as mock_delete_job:
+            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
+                with patch.object(
+                    manager, "is_candidate_for_deletion", return_value=True
+                ):
+                    # Should not raise
+                    manager.delete_old_jobs()
+
+                assert mock_delete_job.call_count == 2
 
     def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(

@@ -169,7 +169,6 @@ class JobManager:
             try:
                 if self.is_candidate_for_deletion(job, retention_period_sec):
                     self.delete_job(job)
-            # FIXME: test
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
