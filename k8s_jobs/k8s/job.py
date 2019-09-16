@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class JobConfigSource(ABC):
     @abstractmethod
-    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
+    def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         """
         Returns a V1Job object or a Dict with the same structure
         """
@@ -32,7 +32,7 @@ class StaticJobConfigSource(JobConfigSource):
     def __init__(self, config: Union[client.V1Job, Dict]):
         self.config = config
 
-    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
+    def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         return copy.deepcopy(self.config)
 
 
@@ -44,9 +44,11 @@ class YamlFileConfigSource(JobConfigSource):
     def __init__(self, path: str):
         self.path = path
 
-    def get(self, template_args: Optional[Dict]=None) -> Union[client.V1Job, Dict]:
+    def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         jinja2_environment = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
-        rendered = jinja2_environment.get_template(self.path).render(template_args or {})
+        rendered = jinja2_environment.get_template(self.path).render(
+            template_args or {}
+        )
         stream = StringIO(rendered)
         return yaml.safe_load(stream)
 
@@ -85,11 +87,14 @@ class JobGenerator:
     def __init__(self, config_source: JobConfigSource):
         self.config_source = config_source
 
-    def generate(self) -> Union[client.V1Job, Dict]:
+    # NOTE: This feels a bit awkward that we're plumbing this argument all the way down from the top
+    # to the bottom, but I can't think of a clean way to separate config fetching from generation
+    # otherwise.
+    def generate(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         """
         Generates a new job spec with a unique name
         """
-        config = self.config_source.get()
+        config = self.config_source.get(template_args=template_args)
         if isinstance(config, client.V1Job):
             config.metadata.name += f"-{secrets.token_hex(24)}"
         else:
@@ -116,11 +121,11 @@ class JobManager:
         self.job_generators = job_generators
 
     # FIXME: Tests
-    def create_job(self, job_name: str, template_args: Optional[Dict]=None) -> str:
+    def create_job(self, job_name: str, template_args: Optional[Dict] = None) -> str:
         """
         Spawn a job for the given job_name
         """
-        job = self.job_generators[job_name].generate(template_args or {})
+        job = self.job_generators[job_name].generate(template_args=template_args)
         self.signer.sign(job)
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
