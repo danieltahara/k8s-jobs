@@ -147,18 +147,27 @@ class JobManager:
             )
             yield from response.items
 
-    # FIXME: Completed ts is not set for failed jobs
+    # FIXME: Test
     def is_old_job(self, job: client.V1Job, retention_period_sec: int) -> bool:
-        if job.status.completion_time:
-            completed_ts = datetime.timestamp(job.status.completion_time)
-            if completed_ts + retention_period_sec <= time.time():
-                return True
+        for condition in job.status.conditions:
+            if condition.status != 'True':
+                continue
+            if condition.type not in ["Complete", "Failed"]:
+                continue
+            last_transition_ts = datetime.timestamp(condition.last_transition_time)
+            if last_transition_ts + retention_period_sec >time.time():
+                continue
+            return True
         return False
 
     def delete_old_jobs(self, retention_period_sec: int = 3600):
         for job in self.fetch_jobs():
-            if self.is_old_job(job, retention_period_sec):
-                self.delete_job(job)
+            try:
+                if self.is_old_job(job, retention_period_sec):
+                    self.delete_job(job)
+            # FIXME: test
+            except client.rest.ApiException:
+                logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
     def run_background_cleanup(
         self, interval_sec: int = 60, retention_period_sec: int = 3600

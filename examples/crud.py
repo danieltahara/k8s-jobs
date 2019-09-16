@@ -19,10 +19,10 @@ def create(name, signer):
     logging.info(f"Created job {job_name}")
 
 
-def delete(signer):
+def delete(signer, timeout):
     manager = JobManager("default", signer, {})
 
-    manager.delete_old_jobs(0)
+    manager.delete_old_jobs(timeout)
 
 
 if __name__ == "__main__":
@@ -40,7 +40,8 @@ if __name__ == "__main__":
         name = sys.argv[2]
         create(name, signer)
     elif action == "delete":
-        delete(signer)
+        timeout = int(sys.argv[2])
+        delete(signer, timeout)
 
     jobs = list(manager.fetch_jobs())
     logging.info(f"Jobs: {[job.metadata.name for job in jobs]}")
