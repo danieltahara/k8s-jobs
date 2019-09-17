@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ name }}
+spec:
+  template:
+    spec:
+      containers:
+      - name: {{ name }}
+        image: ubuntu
+        command: ["echo", "{{ name }}"]
+      restartPolicy: Never
+  backoffLimit: 0
+  activeDeadlineSeconds: 600

@@ -111,14 +111,15 @@ class TestJobGenerator:
 
     def test_generate_with_template_args(self):
         mock_config_source = Mock()
-        mock_config_source.get.return_value= V1Job(metadata=V1ObjectMeta(name="anotherone"))
+        mock_config_source.get.return_value = V1Job(
+            metadata=V1ObjectMeta(name="anotherone")
+        )
         generator = JobGenerator(mock_config_source)
         template_args = {"foo": "bar"}
 
         generator.generate(template_args=template_args)
 
         mock_config_source.get.assert_called_once_with(template_args=template_args)
-
 
 
 class TestJobManager:

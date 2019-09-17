@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 import sys
 
@@ -9,13 +10,19 @@ from kubernetes import config
 logging.root.setLevel(logging.NOTSET)
 
 
-def create(name, signer):
-    source = YamlFileConfigSource(f"{Path(__file__).parents[0]}/k8s/{name}.yaml")
+def create(name, signer, *template_kvs):
+    path = Path(__file__).parents[0]/ f"k8s/{name}.yaml"
+    source = YamlFileConfigSource(os.path.abspath(path))
     generator = JobGenerator(source)
 
     manager = JobManager("default", signer, {name: generator})
 
-    job_name = manager.create_job(name)
+    template_args = {
+        template_kv.split("=")[0]: template_kv.split("=")[1]
+        for template_kv in template_kvs
+    }
+
+    job_name = manager.create_job(name, template_args=template_args)
     logging.info(f"Created job {job_name}")
 
 
@@ -38,7 +45,8 @@ if __name__ == "__main__":
 
     if action == "create":
         name = sys.argv[2]
-        create(name, signer)
+        template_kvs = sys.argv[3:]
+        create(name, signer, *template_kvs)
     elif action == "delete":
         timeout = int(sys.argv[2])
         delete(signer, timeout)

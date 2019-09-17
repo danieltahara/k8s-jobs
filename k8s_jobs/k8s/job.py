@@ -90,7 +90,9 @@ class JobGenerator:
     # NOTE: This feels a bit awkward that we're plumbing this argument all the way down from the top
     # to the bottom, but I can't think of a clean way to separate config fetching from generation
     # otherwise.
-    def generate(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
+    def generate(
+        self, template_args: Optional[Dict] = None
+    ) -> Union[client.V1Job, Dict]:
         """
         Generates a new job spec with a unique name
         """
