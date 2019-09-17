@@ -1,0 +1,36 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: job-server
+  labels:
+    app: job-server
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: job-server
+    spec:
+      containers:
+        - name: job-server
+          image: job-server
+          imagePullPolicy: Always
+          env:
+            - name: CONFIG_PATH
+              # This should reference the top level key in the configmap
+              value: /etc/config/job_definitions
+          volumeMounts:
+          - name: job-definitions-volume
+            mountPath: /etc/config
+  volumes:
+    - name: job-definitions-volume
+      configMap:
+        name: job-definitions
+
+
