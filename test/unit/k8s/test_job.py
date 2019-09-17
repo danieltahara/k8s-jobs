@@ -14,7 +14,7 @@ from kubernetes.client import (
 from kubernetes.client.rest import ApiException
 import pytest
 
-from k8s_async.k8s.job import (
+from k8s_jobs.k8s.job import (
     JobGenerator,
     JobManager,
     JobSigner,
@@ -25,7 +25,7 @@ from k8s_async.k8s.job import (
 
 @pytest.fixture
 def mock_batch_client():
-    with patch("k8s_async.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
+    with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
 
 
@@ -37,12 +37,22 @@ class TestConfigSource:
 
         with open(tmp_file_name, "w+") as f:
             yaml.dump(d1, f)
-        c = YamlFileConfigSource(tmp_file_name)
+        c = YamlFileConfigSource(str(tmp_file_name))
         assert d1 == c.get()
 
         with open(tmp_file_name, "w+") as f:
             yaml.dump(d2, f)
         assert d2 == c.get()
+
+    def test_yaml_config_source_templates(self, request, tmp_path):
+        jinja_d = {"biz": "{{ buzz }}"}
+        tmp_file_name = tmp_path / request.node.name
+        with open(tmp_file_name, "w+") as f:
+            yaml.dump(jinja_d, f)
+
+        c = YamlFileConfigSource(str(tmp_file_name))
+
+        assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
 
 
 class TestJobSignatureGenerator:
@@ -99,6 +109,18 @@ class TestJobGenerator:
             j["metadata"]["name"] != job.metadata.name
         ), "Should have mutated job name"
 
+    def test_generate_with_template_args(self):
+        mock_config_source = Mock()
+        mock_config_source.get.return_value = V1Job(
+            metadata=V1ObjectMeta(name="anotherone")
+        )
+        generator = JobGenerator(mock_config_source)
+        template_args = {"foo": "bar"}
+
+        generator.generate(template_args=template_args)
+
+        mock_config_source.get.assert_called_once_with(template_args=template_args)
+
 
 class TestJobManager:
     def test_create_job(self, mock_batch_client):
@@ -125,6 +147,23 @@ class TestJobManager:
 
         with pytest.raises(KeyError):
             manager.create_job("unknown")
+
+    def test_create_job_with_template(self, mock_batch_client):
+        mock_batch_client.create_namespaced_job.return_value = V1Job(
+            metadata=V1ObjectMeta()
+        )
+        job_name = "job"
+        mock_generator = Mock()
+        manager = JobManager(
+            namespace="geerick",
+            signer=Mock(),
+            job_generators={job_name: mock_generator},
+        )
+        template_args = {"dummy": "template"}
+
+        manager.create_job(job_name, template_args=template_args)
+
+        mock_generator.generate.assert_called_once_with(template_args=template_args)
 
     def test_delete_job(self, mock_batch_client):
         namespace = "whee"
