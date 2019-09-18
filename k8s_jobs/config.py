@@ -1,9 +1,11 @@
 """
 This module contains application config finding/parsing logic
 """
+from dataclasses import dataclass
 import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
+import yaml
 
 from k8s_jobs.k8s.job import JobGenerator, YamlFileConfigSource
 
@@ -15,11 +17,30 @@ def env_var_name(name: str) -> str:
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
+@dataclass
+class JobDefinition:
+    name: str
+
 
 class JobDefinitionsConfig:
-    JOB_DEFINITION_PATH_PREFIX = "JOB_DEFINITION_PATH_"
+    JOB_DEFINITIONS_CONFIG_ROOT = "JOB_DEFINITIONS_CONFIG_ROOT"
+    JOB_DEFINITIONS_FILE_NAME = "job_definitions"
+    JOB_DEFINITION_PATH_ENV_PREFIX = "JOB_DEFINITION_PATH_"
+    JOB_SIGNATURE_ENV_VAR = "JOB_SIGNATURE"
 
-    def __init__(self, job_definitions: List[str], config_root: str):
+    @classmethod
+    def  from_path(cls, config_root: Optional[str]=None) -> 'JobDefinitionsConfig':
+        if not config_root:
+            config_root = cls.JOB_DEFINITIONS_CONFIG_ROOT
+        job_definitions_file = config_root + "/" + cls.JOB_DEFINITIONS_FILE_NAME
+        with open(job_definitions_file, "r") as f:
+            job_definitions_dicts = yaml.safe_load(f)
+        return cls(
+                config_root=config_root,
+                job_definitions=[JobDefinition(**d)  for d in job_definitions_dicts]
+                )
+
+    def __init__(self,config_root: str,   job_definitions: List[JobDefinition]):
         self.job_definitions = job_definitions
         self.config_root = config_root
 

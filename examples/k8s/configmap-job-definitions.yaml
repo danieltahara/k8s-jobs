@@ -5,14 +5,15 @@ metadata:
   labels:
     app: job-server
 data:
-  # List of job-definitions. Currently objects so that we can add more configuration in the future
-  # if need be.
+  # List of job-definitions. Each item is an object so that we can add more configuration in the
+  # future if need be.
   job_definitions: |
     - name: pi
     - name: fail
     - name: timeout
     - name: template
-  # Each job_definition must have a job configuration under the key specified by its name.
+  # Each job_definition must have a job configuration under the key specified by its name, or be
+  # specified in a custom config map with an environment variable pointing to its mounted location.
   pi: |
     apiVersion: batch/v1
     kind: Job

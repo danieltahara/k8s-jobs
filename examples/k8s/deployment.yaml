@@ -22,15 +22,25 @@ spec:
           image: job-server
           imagePullPolicy: Always
           env:
-            - name: CONFIG_PATH
-              # This should reference the top level key in the configmap
-              value: /etc/config/job_definitions
+            - name: JOB_DEFINITIONS_CONFIG_ROOT
+              value: /etc/config/
+            # Manual override for job definition `pi`
+            - name: JOB_DEFINITION_PATH_PI
+              value: /etc/config2/pi-job-definition
+            - name: JOB_SIGNATURE
+              value: xyz0123456
           volumeMounts:
           - name: job-definitions-volume
             mountPath: /etc/config
+          - name: pi-volume
+            mountPath: /etc/config2/
   volumes:
     - name: job-definitions-volume
       configMap:
         name: job-definitions
-
-
+    - name: pi-volume
+      configMap:
+        name: pi
+        items:
+          - key: pi
+            path: pi-job-definition
