@@ -1,24 +1,9 @@
-import yaml
-
 from flask import Flask, jsonify, request
 import kubernetes
 
-<<<<<<< HEAD
-from k8s_jobs.manager import JobManager, JobSigner
-||||||| merged common ancestors
-from k8s_jobs.k8s.job import JobManager, JobSigner
-=======
-from k8s_jobs.k8s.config import JobDefinitionsConfig
-from k8s_jobs.k8s.job import JobSigner, JobManager
->>>>>>> flask is example
+from k8s_jobs.config import EnvJobManagerFactory
 
 app = Flask(__name__)
-
-
-@app.route("/jobs", methods=["GET"])
-def list():
-    jobs = app.manager.fetch_jobs()
-    return jsonify({"jobs": {job.metadata.name: job.metadata.status for job in jobs}})
 
 
 @app.route("/jobs/<job_definition_name>", methods=["POST"])
@@ -29,6 +14,21 @@ def create(job_definition_name: str):
 
     return jsonify({"job_name": job_name})
 
+@app.route("/jobs", methods=["GET"])
+def list():
+    job_definition_name = request.args.get("job_definition_name", None)
+    jobs = app.manager.fetch_jobs(job_definition_name)
+    return jsonify({"jobs": {job.metadata.name: job.metadata.status for job in jobs}})
+
+@app.route("/jobs/<job_name>/status", methods=["GET"])
+def status(job_name: str):
+    status = app.manager.job_status()
+    return jsonify(status)
+
+@app.route("/jobs/<job_name>/logs", methods=["GET"])
+def logs(job_name: str):
+    # NOT JSON!
+    return app.manager.job_logs(job_name=job_name)
 
 @app.route("/healthcheck", methods=["GET"])
 def healthcheck():
@@ -40,20 +40,13 @@ if __name__ == "__main__":
 
     app = Flask(__name__)
 
-    namespace = app.config["JOB_NAMESPACE"]
-    signer = JobSigner(app.config["JOB_SIGNATURE"])
+    config = EnvJobManagerFactory.from_env()
 
-    with open(app.config["JOB_DEFINITIONS_PATH"]) as f:
-        job_definitions = yaml.safe_load(f)
-
-    # TODO: Set default on config object
-    config_root = app.config.get("JOB_DEFINITIONS_CONFIG_ROOT", "/etc/config")
-
-    config = JobDefinitionsConfig(job_definitions, config_root)
-
-    manager = JobManager(namespace, signer, config.make_generators())
+    manager = config.generate()
 
     retention_period_sec = int(app.config.get("JOB_RETENTION_PERIOD_SEC", "3600"))
-    _ = manager.run_background_cleanup(retention_period_sec=retention_period_sec)
+    _ = manager.run_background_cleanup(retention_period_sec=retention_period_sec, delete_callback=print)
 
     app.manager = manager
+
+    app.run('0.0.0.0')

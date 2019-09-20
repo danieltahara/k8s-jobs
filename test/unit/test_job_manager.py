@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 from unittest.mock import ANY, Mock, patch
-import yaml
 
 from kubernetes.client import (
     V1DeleteOptions,
@@ -15,11 +14,12 @@ from kubernetes.client.rest import ApiException
 import pytest
 
 from k8s_jobs.job import (
-    JobGenerator,
     JobManager,
     JobSigner,
-    StaticJobConfigSource,
-    YamlFileConfigSource,
+)
+from k8s_jobs.spec import (
+    JobGenerator,
+    StaticJobSpecSource,
 )
 
 
@@ -27,32 +27,6 @@ from k8s_jobs.job import (
 def mock_batch_client():
     with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
-
-
-class TestConfigSource:
-    def test_yaml_config_source_reloads(self, request, tmp_path):
-        d1 = {"foo": "bar"}
-        d2 = {"biz": "buzz"}
-        tmp_file_name = tmp_path / request.node.name
-
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(d1, f)
-        c = YamlFileConfigSource(str(tmp_file_name))
-        assert d1 == c.get()
-
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(d2, f)
-        assert d2 == c.get()
-
-    def test_yaml_config_source_templates(self, request, tmp_path):
-        jinja_d = {"biz": "{{ buzz }}"}
-        tmp_file_name = tmp_path / request.node.name
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(jinja_d, f)
-
-        c = YamlFileConfigSource(str(tmp_file_name))
-
-        assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
 
 
 class TestJobSignatureGenerator:
@@ -67,6 +41,8 @@ class TestJobSignatureGenerator:
             job.metadata.labels[JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
+        assert False, "Update all tests to take job def name"
+
     def test_sets_label_dict(self):
         signature = "hehehe"
         signer = JobSigner(signature)
@@ -78,17 +54,20 @@ class TestJobSignatureGenerator:
             job["metadata"]["labels"][JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
+        assert False, "Update all tests to take job def name"
+
     def test_label_selector(self):
         signature = "woahhhh"
         signer = JobSigner(signature)
 
         assert signer.label_selector == f"{JobSigner.LABEL_KEY}={signature}"
+        assert False, "Update all tests to take job def name"
 
 
 class TestJobGenerator:
     def test_unique_names(self):
         generator = JobGenerator(
-            StaticJobConfigSource(
+            StaticJobSpecSource(
                 V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
             )
         )
@@ -102,7 +81,7 @@ class TestJobGenerator:
 
     def test_generate_with_dict_config(self):
         job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-        generator = JobGenerator(StaticJobConfigSource(job.to_dict()))
+        generator = JobGenerator(StaticJobSpecSource(job.to_dict()))
 
         j = generator.generate()
         assert (
@@ -164,6 +143,9 @@ class TestJobManager:
         manager.create_job(job_name, template_args=template_args)
 
         mock_generator.generate.assert_called_once_with(template_args=template_args)
+
+    def test_job_status(self, mock_batch_client):
+        assert False
 
     def test_delete_job(self, mock_batch_client):
         namespace = "whee"
@@ -241,6 +223,9 @@ class TestJobManager:
             job, 100
         ), "Job that failed a while ago should be deleted"
 
+    def test_delete_old_jobs_callback(self, mock_batch_client):
+        assert False
+
     def test_delete_old_jobs_error(self, mock_batch_client):
         manager = JobManager(namespace="harhar", signer=Mock(), job_generators={})
 
@@ -283,3 +268,6 @@ class TestJobManager:
         mock_batch_client.list_namespaced_job.assert_called_with(
             namespace=namespace, _continue=_continue
         )
+
+    def test_fetch_jobs_job_definition_name(self, mock_batch_client):
+        assert False
