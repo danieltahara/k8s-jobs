@@ -102,12 +102,6 @@ class JobManager:
         )
         logger.debug(response)
 
-    def job_status(self, job_name: str) -> client.V1JobStatus:
-        batch_v1_client = client.BatchV1Api()
-        return batch_v1_client.read_namespaced_job_status(
-            name=job_name, namespace=self.namespace
-        )
-
     def fetch_jobs(
         self, job_definition_name: Optional[str] = None
     ) -> Iterator[client.V1Job]:
@@ -124,6 +118,39 @@ class JobManager:
                 namespace=self.namespace, _continue=response.metadata._continue
             )
             yield from response.items
+
+    def job_status(self, job_name: str) -> client.V1JobStatus:
+        batch_v1_client = client.BatchV1Api()
+        return batch_v1_client.read_namespaced_job_status(
+            name=job_name, namespace=self.namespace
+        )
+
+    def job_logs(self, job_name: str, limit: Optional[int] = 200) -> str:
+        """
+        Returns the last limit logs from each pod for the job.
+
+        Each pod's output is delimited by a header and footer line:
+            Pod: POD_NAME
+            ...
+            =======
+        """
+        core_v1_client = client.CoreV1Api()
+        response = core_v1_client.list_namespaced_pod(
+                namespace=self.namespace,
+                label_selector=f"job-name={job_name}",
+        )
+        logs = ""
+        for pod in response.items:
+            logs += f"Pod: {pod.name}\n"
+            logs += core_v1_client.read_namespaced_pod_logs(
+                    name=pod.metadata.name,
+                    namespace=self.namespace,
+                    tail_lines=limit,
+                    pretty=True,
+                    )
+            logs += "======="
+        return logs
+
 
     def is_candidate_for_deletion(
         self, job: client.V1Job, retention_period_sec: int

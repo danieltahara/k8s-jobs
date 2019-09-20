@@ -28,6 +28,11 @@ def mock_batch_client():
     with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
 
+@pytest.fixture
+def mock_core_client():
+    with patch("k8s_jobs.k8s.job.client.CoreV1Api") as mock_core_v1_api:
+        yield mock_core_v1_api.return_value
+
 
 class TestJobSignatureGenerator:
     def test_sets_label_job(self):
@@ -143,9 +148,6 @@ class TestJobManager:
         manager.create_job(job_name, template_args=template_args)
 
         mock_generator.generate.assert_called_once_with(template_args=template_args)
-
-    def test_job_status(self, mock_batch_client):
-        assert False
 
     def test_delete_job(self, mock_batch_client):
         namespace = "whee"
@@ -270,4 +272,13 @@ class TestJobManager:
         )
 
     def test_fetch_jobs_job_definition_name(self, mock_batch_client):
+        assert False
+
+    def test_job_status(self, mock_batch_client):
+        assert False
+
+    def test_job_logs(self, mock_core_client):
+        assert False
+
+    def test_job_logs_multiple_pods(self, mock_core_client):
         assert False
