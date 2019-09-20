@@ -1,13 +1,11 @@
-"""
-This module contains application config finding/parsing logic
-"""
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import os
 import re
 from typing import Dict, List, Optional
 import yaml
 
-from k8s_jobs.k8s.job import JobGenerator, YamlFileConfigSource
+from k8s_jobs.k8s.job import JobGenerator, JobManager, JobSigner, YamlFileConfigSource
 
 
 def env_var_name(name: str) -> str:
@@ -17,34 +15,52 @@ def env_var_name(name: str) -> str:
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
+
 @dataclass
 class JobDefinition:
     name: str
 
 
-class JobDefinitionsConfig:
+class JobManagerFactory(ABC):
+    @abstractmethod
+    def create(self) -> JobManager:
+        raise NotImplementedError()
+
+
+class EnvJobManagerFactory(JobManagerFactory):
     JOB_DEFINITIONS_CONFIG_ROOT = "JOB_DEFINITIONS_CONFIG_ROOT"
     JOB_DEFINITIONS_FILE_NAME = "job_definitions"
     JOB_DEFINITION_PATH_ENV_PREFIX = "JOB_DEFINITION_PATH_"
     JOB_SIGNATURE_ENV_VAR = "JOB_SIGNATURE"
+    JOB_NAMESPACE_ENV_VAR = "JOB_NAMESPACE"
 
     @classmethod
-    def  from_path(cls, config_root: Optional[str]=None) -> 'JobDefinitionsConfig':
+    def from_env(cls, config_root: Optional[str] = None) -> "JobManagerFactory":
+        signature = os.environ[cls.JOB_SIGNATURE_ENV_VAR]
+        namespace = os.environ[cls.JOB_NAMESPACE_ENV_VAR]
+
         if not config_root:
             config_root = cls.JOB_DEFINITIONS_CONFIG_ROOT
+
         job_definitions_file = config_root + "/" + cls.JOB_DEFINITIONS_FILE_NAME
         with open(job_definitions_file, "r") as f:
             job_definitions_dicts = yaml.safe_load(f)
-        return cls(
-                config_root=config_root,
-                job_definitions=[JobDefinition(**d)  for d in job_definitions_dicts]
-                )
 
-    def __init__(self,config_root: str,   job_definitions: List[JobDefinition]):
+        return cls(
+            namespace,
+            signature,
+            config_root=config_root,
+            job_definitions=[JobDefinition(**d) for d in job_definitions_dicts],
+        )
+
+    def __init__(
+        self, signature: str, config_root: str, job_definitions: List[JobDefinition]
+    ):
+        self.signature = signature
         self.job_definitions = job_definitions
         self.config_root = config_root
 
-    def config_path(self, job_definition_name: str) -> str:
+    def job_definition_config_path(self, job_definition_name: str) -> str:
         """
         Returns the job definition config path, checking for an environment variable override.
 
@@ -55,16 +71,20 @@ class JobDefinitionsConfig:
             self.default_path(job_definition_name),
         )
 
-    def default_path(self, job_definition_name: str) -> str:
+    def job_definition_config_default_path(self, job_definition_name: str) -> str:
         return self.config_root + "/" + job_definition_name
 
-    def make_generators(self) -> Dict[str, JobGenerator]:
+    def create(self) -> JobManager:
         """
-        Returns a dict of generators based on the config
+        Returns a Job manager based on the config
         """
-        return {
-            job_definition_name: JobGenerator(
-                YamlFileConfigSource(self.config_path(job_definition_name))
-            )
-            for job_definition_name in self.job_definition_names
-        }
+        return JobManager(
+            namespace=self.namespace,
+            signer=JobSigner(self.signature),
+            job_generators={
+                job_definition_name: JobGenerator(
+                    YamlFileConfigSource(self.config_path(job_definition_name))
+                )
+                for job_definition_name in self.job_definition_names
+            },
+        )

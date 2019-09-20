@@ -14,6 +14,7 @@ from k8s_jobs.k8s.job import JobSigner, JobManager
 
 app = Flask(__name__)
 
+
 @app.route("/jobs", methods=["GET"])
 def list():
     jobs = app.manager.fetch_jobs()
@@ -28,11 +29,13 @@ def create(job_definition_name: str):
 
     return jsonify({"job_name": job_name})
 
+
 @app.route("/healthcheck", methods=["GET"])
 def healthcheck():
     return jsonify({"healthy": True})
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     kubernetes.config.load_kube_config()
 
     app = Flask(__name__)
