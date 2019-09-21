@@ -195,9 +195,9 @@ class JobManager:
             retention_period_sec: How long ago a job must have reached a terminal (completed,
                 failed) state to be considered a candidate for cleanup.
             delete_callback: A callback that is guaranteed to be called at least once before the job
-                is permanently deleted. This can be used to persist job history and state. Any
-                exceptions raised will therefore block cleanup. Callers are expected to monitor such
-                occurences.
+                is permanently deleted. This can be used to persist job history and state and/or for
+                instrumentation. Any exceptions raised will therefore block cleanup. Callers are
+                expected to monitor such occurences.
         """
         # NOTE: The amount of mocking in tests for this indicates some code smell. Consider perhaps
         # refactoring all the deletion/loop logic into its own object.
