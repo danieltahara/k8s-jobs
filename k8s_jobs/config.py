@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import os
 import re
-from typing import Dict, List, Optional
+from typing import List, Optional
 import yaml
 
-from k8s_jobs.k8s.job import JobGenerator, JobManager, JobSigner, YamlFileConfigSource
+from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
 
 
 def env_var_name(name: str) -> str:
@@ -27,6 +28,9 @@ class JobManagerFactory(ABC):
         raise NotImplementedError()
 
 
+# TODO: Continue to rework this. We want the property that you can auto-reload new jobs without
+# kicking the process, hence the desire for job definitions to be defined in a file, but that makes
+# the config pretty dang awkward (TM).
 class EnvJobManagerFactory(JobManagerFactory):
     JOB_DEFINITIONS_CONFIG_ROOT = "JOB_DEFINITIONS_CONFIG_ROOT"
     JOB_DEFINITIONS_FILE_NAME = "job_definitions"
@@ -54,8 +58,13 @@ class EnvJobManagerFactory(JobManagerFactory):
         )
 
     def __init__(
-        self, signature: str, config_root: str, job_definitions: List[JobDefinition]
+        self,
+        namespace: str,
+        signature: str,
+        config_root: str,
+        job_definitions: List[JobDefinition],
     ):
+        self.namespace = namespace
         self.signature = signature
         self.job_definitions = job_definitions
         self.config_root = config_root
@@ -67,8 +76,8 @@ class EnvJobManagerFactory(JobManagerFactory):
         Users can override the path by setting JOB_DEFINITION_PATH_SNAKE_CASE_NAME_IN_ALL_CAPS
         """
         return os.environ.get(
-            f"{self.JOB_DEFINITION_PATH_PREFIX}{env_var_name(job_definition_name)}",
-            self.default_path(job_definition_name),
+            f"{self.JOB_DEFINITION_PATH_ENV_PREFIX}{env_var_name(job_definition_name)}",
+            self.job_definition_config_default_path(job_definition_name),
         )
 
     def job_definition_config_default_path(self, job_definition_name: str) -> str:
@@ -83,7 +92,7 @@ class EnvJobManagerFactory(JobManagerFactory):
             signer=JobSigner(self.signature),
             job_generators={
                 job_definition_name: JobGenerator(
-                    YamlFileConfigSource(self.config_path(job_definition_name))
+                    YamlFileSpecSource(self.config_path(job_definition_name))
                 )
                 for job_definition_name in self.job_definition_names
             },
