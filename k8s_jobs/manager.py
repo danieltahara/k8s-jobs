@@ -149,17 +149,18 @@ class JobManager:
         logs = ""
         for pod in response.items:
             logs += f"Pod: {pod.metadata.name}\n"
-            logs += core_v1_client.read_namespaced_pod_log(
+            pod_logs = core_v1_client.read_namespaced_pod_log(
                 name=pod.metadata.name,
                 namespace=self.namespace,
                 tail_lines=limit,
                 limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
                 pretty=True,
             )
-            if math.isclose(len(logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
+            if math.isclose(len(pod_logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
                 logger.warning(
                     f"Log fetch for {job_name} pod {pod.metadata.name} may have exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
                 )
+            logs += pod_logs
             logs += "======="
         return logs
 
@@ -198,6 +199,8 @@ class JobManager:
                 exceptions raised will therefore block cleanup. Callers are expected to monitor such
                 occurences.
         """
+        # NOTE: The amount of mocking in tests for this indicates some code smell. Consider perhaps
+        # refactoring all the deletion/loop logic into its own object.
         for job in self.fetch_jobs():
             try:
                 if self.is_candidate_for_deletion(job, retention_period_sec):
