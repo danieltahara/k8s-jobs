@@ -28,6 +28,9 @@ class JobManagerFactory(ABC):
         raise NotImplementedError()
 
 
+# TODO: Continue to rework this. We want the property that you can auto-reload new jobs without
+# kicking the process, hence the desire for job definitions to be defined in a file, but that makes
+# the config pretty dang awkward (TM).
 class EnvJobManagerFactory(JobManagerFactory):
     JOB_DEFINITIONS_CONFIG_ROOT = "JOB_DEFINITIONS_CONFIG_ROOT"
     JOB_DEFINITIONS_FILE_NAME = "job_definitions"
@@ -55,7 +58,11 @@ class EnvJobManagerFactory(JobManagerFactory):
         )
 
     def __init__(
-            self, namespace:str,signature: str, config_root: str, job_definitions: List[JobDefinition]
+        self,
+        namespace: str,
+        signature: str,
+        config_root: str,
+        job_definitions: List[JobDefinition],
     ):
         self.namespace = namespace
         self.signature = signature
@@ -69,8 +76,8 @@ class EnvJobManagerFactory(JobManagerFactory):
         Users can override the path by setting JOB_DEFINITION_PATH_SNAKE_CASE_NAME_IN_ALL_CAPS
         """
         return os.environ.get(
-            f"{self.JOB_DEFINITION_PATH_PREFIX}{env_var_name(job_definition_name)}",
-            self.default_path(job_definition_name),
+            f"{self.JOB_DEFINITION_PATH_ENV_PREFIX}{env_var_name(job_definition_name)}",
+            self.job_definition_config_default_path(job_definition_name),
         )
 
     def job_definition_config_default_path(self, job_definition_name: str) -> str:

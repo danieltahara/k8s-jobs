@@ -9,6 +9,7 @@ from kubernetes.client import (
     V1JobStatus,
     V1ListMeta,
     V1ObjectMeta,
+    V1Pod,
 )
 from kubernetes.client.rest import ApiException
 import pytest
@@ -235,9 +236,6 @@ class TestJobManager:
             job, 100
         ), "Job that failed a while ago should be deleted"
 
-    def test_delete_old_jobs_callback(self, mock_batch_client):
-        assert False
-
     def test_delete_old_jobs_error(self, mock_batch_client):
         manager = JobManager(namespace="harhar", signer=Mock(), job_generators={})
 
@@ -252,6 +250,19 @@ class TestJobManager:
                     manager.delete_old_jobs()
 
                 assert mock_delete_job.call_count == 2
+
+    def test_delete_old_jobs_callback(self, mock_batch_client):
+        manager = JobManager(namespace="owahhh", signer=Mock(), job_generators={})
+        with patch.object(manager, "delete_job", return_value=None):
+            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
+                with patch.object(
+                    manager, "is_candidate_for_deletion", return_value=True
+                ):
+                    mock_callback = Mock()
+
+                    manager.delete_old_jobs(delete_callback=mock_callback)
+
+                    assert mock_callback.call_count == 2
 
     def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
@@ -282,13 +293,71 @@ class TestJobManager:
         )
 
     def test_fetch_jobs_job_definition_name(self, mock_batch_client):
-        assert False
+        namespace = "phd"
+        signer = JobSigner("school")
+        manager = JobManager(namespace=namespace, signer=signer, job_generators={})
+        job_definition_name = "jd"
+        mock_batch_client.list_namespaced_job.return_value = V1JobList(
+            items=[], metadata=V1ListMeta()
+        )
+
+        list(manager.fetch_jobs(job_definition_name))
+
+        mock_batch_client.list_namespaced_job.assert_called_once_with(
+            namespace=namespace,
+            label_selector=signer.label_selector(job_definition_name),
+        )
 
     def test_job_status(self, mock_batch_client):
-        assert False
+        namespace = "thisissparta"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "xyzab"
+
+        manager.job_status(job_name)
+
+        mock_batch_client.read_namespaced_job_status.assert_called_once_with(
+            name=job_name, namespace=namespace
+        )
 
     def test_job_logs(self, mock_core_client):
-        assert False
+        namespace = "treesbecomelogs"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "ahoymatey"
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(metadata=V1ObjectMeta(name="foo"))
+        ]
+        log_msg = "this is a log"
+        mock_core_client.read_namespaced_pod_log.return_value = log_msg
 
-    def test_job_logs_multiple_pods(self, mock_core_client):
-        assert False
+        log = manager.job_logs(job_name)
+
+        assert log_msg in log
+        assert "foo" in log
+        mock_core_client.list_namespaced_pod.assert_called_once_with(
+            namespace=namespace, label_selector=f"job-name={job_name}"
+        )
+        mock_core_client.read_namespaced_pod_log.assert_called_once_with(
+            name="foo",
+            namespace=namespace,
+            tail_lines=ANY,
+            limit_bytes=ANY,
+            pretty=True,
+        )
+
+    def test_job_logs_multiple(self, mock_core_client):
+        namespace = "123"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "takeyourhandandcomewithme"
+        names = ["because", "you"]
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(metadata=V1ObjectMeta(name=names[0])),
+            V1Pod(metadata=V1ObjectMeta(name=names[1])),
+        ]
+        log_msgs = ["look", "so"]
+        mock_core_client.read_namespaced_pod_log.side_effect = log_msgs
+
+        log = manager.job_logs(job_name)
+
+        assert all([name in log for name in names]), "Should print both pod names"
+        assert all([log_msg in log for log_msg in log_msgs]), "Should print both logs"
+        assert mock_core_client.read_namespaced_pod_log.call_count == 2

@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import math
 import threading
 import time
 from typing import Callable, Dict, Iterator, Optional, Union
@@ -57,6 +58,11 @@ class JobSigner:
         return selector
 
 
+# TODO: Find the circumstances under which to raise this. Plus add tests.
+class JobNotFoundException(Exception):
+    pass
+
+
 class JobManager:
     """
     A JobManager is responsible for managing jobs -- creating, deleting, and responding to status
@@ -66,6 +72,8 @@ class JobManager:
     may also choose to implement Job retention by setting .spec.ttlSecondsAfterFinished, but this is
     still in alpha as of k8s v1.12.
     """
+
+    JOB_LOGS_LIMIT_BYTES = 1024 ** 3
 
     def __init__(
         self, namespace: str, signer: JobSigner, job_generators: Dict[str, JobGenerator]
@@ -140,13 +148,18 @@ class JobManager:
         )
         logs = ""
         for pod in response.items:
-            logs += f"Pod: {pod.name}\n"
-            logs += core_v1_client.read_namespaced_pod_logs(
+            logs += f"Pod: {pod.metadata.name}\n"
+            logs += core_v1_client.read_namespaced_pod_log(
                 name=pod.metadata.name,
                 namespace=self.namespace,
                 tail_lines=limit,
+                limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
                 pretty=True,
             )
+            if math.isclose(len(logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
+                logger.warning(
+                    f"Log fetch for {job_name} pod {pod.metadata.name} may have exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
+                )
             logs += "======="
         return logs
 
@@ -170,6 +183,7 @@ class JobManager:
 
     def delete_old_jobs(
         self,
+        *,
         delete_callback: Optional[Callable[[client.V1Job], None]] = None,
         retention_period_sec: int = 3600,
     ):
@@ -187,11 +201,12 @@ class JobManager:
         for job in self.fetch_jobs():
             try:
                 if self.is_candidate_for_deletion(job, retention_period_sec):
-                    try:
-                        delete_callback(job)
-                    except Exception:
-                        logger.warning(f"Error in delete callback", exc_info=True)
-                        continue
+                    if delete_callback:
+                        try:
+                            delete_callback(job)
+                        except Exception:
+                            logger.warning(f"Error in delete callback", exc_info=True)
+                            continue
                     self.delete_job(job)
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
