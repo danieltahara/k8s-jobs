@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 import sys
 
-from k8s_jobs.k8s.job import JobManager, JobGenerator, JobSigner, YamlFileConfigSource
+from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, YamlFileConfigSource
 
 from kubernetes import config
 
@@ -11,7 +12,7 @@ logging.root.setLevel(logging.NOTSET)
 
 
 def create(name, signer, *template_kvs):
-    path = Path(__file__).parents[0]/ f"k8s/{name}.yaml"
+    path = Path(__file__).parents[0] / f"k8s/{name}.yaml"
     source = YamlFileConfigSource(os.path.abspath(path))
     generator = JobGenerator(source)
 

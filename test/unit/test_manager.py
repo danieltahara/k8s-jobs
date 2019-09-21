@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 from unittest.mock import ANY, Mock, patch
-import yaml
 
 from kubernetes.client import (
     V1DeleteOptions,
@@ -10,49 +9,25 @@ from kubernetes.client import (
     V1JobStatus,
     V1ListMeta,
     V1ObjectMeta,
+    V1Pod,
 )
 from kubernetes.client.rest import ApiException
 import pytest
 
-from k8s_jobs.k8s.job import (
-    JobGenerator,
-    JobManager,
-    JobSigner,
-    StaticJobConfigSource,
-    YamlFileConfigSource,
-)
+from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, StaticJobSpecSource
 
 
 @pytest.fixture
 def mock_batch_client():
-    with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
+    with patch("k8s_jobs.manager.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
 
 
-class TestConfigSource:
-    def test_yaml_config_source_reloads(self, request, tmp_path):
-        d1 = {"foo": "bar"}
-        d2 = {"biz": "buzz"}
-        tmp_file_name = tmp_path / request.node.name
-
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(d1, f)
-        c = YamlFileConfigSource(str(tmp_file_name))
-        assert d1 == c.get()
-
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(d2, f)
-        assert d2 == c.get()
-
-    def test_yaml_config_source_templates(self, request, tmp_path):
-        jinja_d = {"biz": "{{ buzz }}"}
-        tmp_file_name = tmp_path / request.node.name
-        with open(tmp_file_name, "w+") as f:
-            yaml.dump(jinja_d, f)
-
-        c = YamlFileConfigSource(str(tmp_file_name))
-
-        assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
+@pytest.fixture
+def mock_core_client():
+    with patch("k8s_jobs.manager.client.CoreV1Api") as mock_core_v1_api:
+        yield mock_core_v1_api.return_value
 
 
 class TestJobSignatureGenerator:
@@ -67,6 +42,13 @@ class TestJobSignatureGenerator:
             job.metadata.labels[JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
+        job_definition_name = "funfun"
+        signer.sign(job, job_definition_name)
+        assert (
+            job.metadata.labels[JobSigner.JOB_DEFINITION_NAME_KEY]
+            == job_definition_name
+        ), "Job Definition label not set"
+
     def test_sets_label_dict(self):
         signature = "hehehe"
         signer = JobSigner(signature)
@@ -78,17 +60,30 @@ class TestJobSignatureGenerator:
             job["metadata"]["labels"][JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
+        job_definition_name = "tbirdaway"
+        signer.sign(job, job_definition_name)
+        assert (
+            job["metadata"]["labels"][JobSigner.JOB_DEFINITION_NAME_KEY]
+            == job_definition_name
+        ), "Job Definition label not set"
+
     def test_label_selector(self):
         signature = "woahhhh"
         signer = JobSigner(signature)
 
-        assert signer.label_selector == f"{JobSigner.LABEL_KEY}={signature}"
+        assert signer.label_selector() == f"{JobSigner.LABEL_KEY}={signature}"
+
+        job_definition_name = "jdphd"
+        assert signer.label_selector(job_definition_name).split(",") == [
+            signer.label_selector(),
+            f"{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name}",
+        ]
 
 
 class TestJobGenerator:
     def test_unique_names(self):
         generator = JobGenerator(
-            StaticJobConfigSource(
+            StaticJobSpecSource(
                 V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
             )
         )
@@ -102,7 +97,7 @@ class TestJobGenerator:
 
     def test_generate_with_dict_config(self):
         job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-        generator = JobGenerator(StaticJobConfigSource(job.to_dict()))
+        generator = JobGenerator(StaticJobSpecSource(job.to_dict()))
 
         j = generator.generate()
         assert (
@@ -256,6 +251,19 @@ class TestJobManager:
 
                 assert mock_delete_job.call_count == 2
 
+    def test_delete_old_jobs_callback(self, mock_batch_client):
+        manager = JobManager(namespace="owahhh", signer=Mock(), job_generators={})
+        with patch.object(manager, "delete_job", return_value=None):
+            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
+                with patch.object(
+                    manager, "is_candidate_for_deletion", return_value=True
+                ):
+                    mock_callback = Mock()
+
+                    manager.delete_old_jobs(delete_callback=mock_callback)
+
+                    assert mock_callback.call_count == 2
+
     def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
             items=[1], metadata=V1ListMeta()
@@ -266,7 +274,7 @@ class TestJobManager:
 
         assert len(list(manager.fetch_jobs())) == 1
         mock_batch_client.list_namespaced_job.assert_called_once_with(
-            namespace=namespace, label_selector=signer.label_selector
+            namespace=namespace, label_selector=signer.label_selector()
         )
 
     def test_fetch_jobs_continue(self, mock_batch_client):
@@ -283,3 +291,73 @@ class TestJobManager:
         mock_batch_client.list_namespaced_job.assert_called_with(
             namespace=namespace, _continue=_continue
         )
+
+    def test_fetch_jobs_job_definition_name(self, mock_batch_client):
+        namespace = "phd"
+        signer = JobSigner("school")
+        manager = JobManager(namespace=namespace, signer=signer, job_generators={})
+        job_definition_name = "jd"
+        mock_batch_client.list_namespaced_job.return_value = V1JobList(
+            items=[], metadata=V1ListMeta()
+        )
+
+        list(manager.fetch_jobs(job_definition_name))
+
+        mock_batch_client.list_namespaced_job.assert_called_once_with(
+            namespace=namespace,
+            label_selector=signer.label_selector(job_definition_name),
+        )
+
+    def test_job_status(self, mock_batch_client):
+        namespace = "thisissparta"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "xyzab"
+
+        manager.job_status(job_name)
+
+        mock_batch_client.read_namespaced_job_status.assert_called_once_with(
+            name=job_name, namespace=namespace
+        )
+
+    def test_job_logs(self, mock_core_client):
+        namespace = "treesbecomelogs"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "ahoymatey"
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(metadata=V1ObjectMeta(name="foo"))
+        ]
+        log_msg = "this is a log"
+        mock_core_client.read_namespaced_pod_log.return_value = log_msg
+
+        log = manager.job_logs(job_name)
+
+        assert log_msg in log
+        assert "foo" in log
+        mock_core_client.list_namespaced_pod.assert_called_once_with(
+            namespace=namespace, label_selector=f"job-name={job_name}"
+        )
+        mock_core_client.read_namespaced_pod_log.assert_called_once_with(
+            name="foo",
+            namespace=namespace,
+            tail_lines=ANY,
+            limit_bytes=ANY,
+            pretty=True,
+        )
+
+    def test_job_logs_multiple(self, mock_core_client):
+        namespace = "123"
+        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        job_name = "takeyourhandandcomewithme"
+        names = ["because", "you"]
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(metadata=V1ObjectMeta(name=names[0])),
+            V1Pod(metadata=V1ObjectMeta(name=names[1])),
+        ]
+        log_msgs = ["look", "so"]
+        mock_core_client.read_namespaced_pod_log.side_effect = log_msgs
+
+        log = manager.job_logs(job_name)
+
+        assert all([name in log for name in names]), "Should print both pod names"
+        assert all([log_msg in log for log_msg in log_msgs]), "Should print both logs"
+        assert mock_core_client.read_namespaced_pod_log.call_count == 2
