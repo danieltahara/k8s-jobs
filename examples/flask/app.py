@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 import kubernetes
 
-from k8s_jobs.k8s.job import JobManager, JobSigner
+from k8s_jobs.manager import JobManager, JobSigner
 
 app = Flask(__name__)
 

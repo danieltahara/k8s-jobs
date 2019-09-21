@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import os
 import re
-from typing import Dict, List, Optional
+from typing import List, Optional
 import yaml
 
-from k8s_jobs.k8s.job import JobGenerator, JobManager, JobSigner, YamlFileConfigSource
+from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
 
 
 def env_var_name(name: str) -> str:
@@ -54,8 +55,9 @@ class EnvJobManagerFactory(JobManagerFactory):
         )
 
     def __init__(
-        self, signature: str, config_root: str, job_definitions: List[JobDefinition]
+            self, namespace:str,signature: str, config_root: str, job_definitions: List[JobDefinition]
     ):
+        self.namespace = namespace
         self.signature = signature
         self.job_definitions = job_definitions
         self.config_root = config_root
@@ -83,7 +85,7 @@ class EnvJobManagerFactory(JobManagerFactory):
             signer=JobSigner(self.signature),
             job_generators={
                 job_definition_name: JobGenerator(
-                    YamlFileConfigSource(self.config_path(job_definition_name))
+                    YamlFileSpecSource(self.config_path(job_definition_name))
                 )
                 for job_definition_name in self.job_definition_names
             },

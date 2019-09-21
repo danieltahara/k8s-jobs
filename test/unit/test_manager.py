@@ -13,24 +13,19 @@ from kubernetes.client import (
 from kubernetes.client.rest import ApiException
 import pytest
 
-from k8s_jobs.job import (
-    JobManager,
-    JobSigner,
-)
-from k8s_jobs.spec import (
-    JobGenerator,
-    StaticJobSpecSource,
-)
+from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, StaticJobSpecSource
 
 
 @pytest.fixture
 def mock_batch_client():
-    with patch("k8s_jobs.k8s.job.client.BatchV1Api") as mock_batch_v1_api:
+    with patch("k8s_jobs.manager.client.BatchV1Api") as mock_batch_v1_api:
         yield mock_batch_v1_api.return_value
+
 
 @pytest.fixture
 def mock_core_client():
-    with patch("k8s_jobs.k8s.job.client.CoreV1Api") as mock_core_v1_api:
+    with patch("k8s_jobs.manager.client.CoreV1Api") as mock_core_v1_api:
         yield mock_core_v1_api.return_value
 
 
@@ -46,7 +41,12 @@ class TestJobSignatureGenerator:
             job.metadata.labels[JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
-        assert False, "Update all tests to take job def name"
+        job_definition_name = "funfun"
+        signer.sign(job, job_definition_name)
+        assert (
+            job.metadata.labels[JobSigner.JOB_DEFINITION_NAME_KEY]
+            == job_definition_name
+        ), "Job Definition label not set"
 
     def test_sets_label_dict(self):
         signature = "hehehe"
@@ -59,14 +59,24 @@ class TestJobSignatureGenerator:
             job["metadata"]["labels"][JobSigner.LABEL_KEY] == signature
         ), "Metadata label not set"
 
-        assert False, "Update all tests to take job def name"
+        job_definition_name = "tbirdaway"
+        signer.sign(job, job_definition_name)
+        assert (
+            job["metadata"]["labels"][JobSigner.JOB_DEFINITION_NAME_KEY]
+            == job_definition_name
+        ), "Job Definition label not set"
 
     def test_label_selector(self):
         signature = "woahhhh"
         signer = JobSigner(signature)
 
-        assert signer.label_selector == f"{JobSigner.LABEL_KEY}={signature}"
-        assert False, "Update all tests to take job def name"
+        assert signer.label_selector() == f"{JobSigner.LABEL_KEY}={signature}"
+
+        job_definition_name = "jdphd"
+        assert signer.label_selector(job_definition_name).split(",") == [
+            signer.label_selector(),
+            f"{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name}",
+        ]
 
 
 class TestJobGenerator:
@@ -253,7 +263,7 @@ class TestJobManager:
 
         assert len(list(manager.fetch_jobs())) == 1
         mock_batch_client.list_namespaced_job.assert_called_once_with(
-            namespace=namespace, label_selector=signer.label_selector
+            namespace=namespace, label_selector=signer.label_selector()
         )
 
     def test_fetch_jobs_continue(self, mock_batch_client):

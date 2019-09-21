@@ -53,7 +53,7 @@ class JobSigner:
         """
         selector = f"{self.LABEL_KEY}={self.signature}"
         if job_definition_name:
-            selector += f"{self.JOB_DEFINITION_NAME_KEY}={job_definition_name}"
+            selector += f",{self.JOB_DEFINITION_NAME_KEY}={job_definition_name}"
         return selector
 
 
@@ -136,21 +136,19 @@ class JobManager:
         """
         core_v1_client = client.CoreV1Api()
         response = core_v1_client.list_namespaced_pod(
-                namespace=self.namespace,
-                label_selector=f"job-name={job_name}",
+            namespace=self.namespace, label_selector=f"job-name={job_name}"
         )
         logs = ""
         for pod in response.items:
             logs += f"Pod: {pod.name}\n"
             logs += core_v1_client.read_namespaced_pod_logs(
-                    name=pod.metadata.name,
-                    namespace=self.namespace,
-                    tail_lines=limit,
-                    pretty=True,
-                    )
+                name=pod.metadata.name,
+                namespace=self.namespace,
+                tail_lines=limit,
+                pretty=True,
+            )
             logs += "======="
         return logs
-
 
     def is_candidate_for_deletion(
         self, job: client.V1Job, retention_period_sec: int

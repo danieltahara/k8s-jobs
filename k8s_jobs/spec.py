@@ -8,6 +8,7 @@ import yaml
 import jinja2
 from kubernetes import client
 
+
 class JobSpecSource(ABC):
     @abstractmethod
     def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
@@ -44,6 +45,7 @@ class YamlFileSpecSource(JobSpecSource):
         )
         stream = StringIO(rendered)
         return yaml.safe_load(stream)
+
 
 class JobGenerator:
     def __init__(self, config_source: JobSpecSource):

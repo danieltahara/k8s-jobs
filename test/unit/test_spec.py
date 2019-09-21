@@ -2,6 +2,7 @@ import yaml
 
 from k8s_jobs.spec import YamlFileSpecSource
 
+
 class TestSpecSource:
     def test_yaml_config_source_reloads(self, request, tmp_path):
         d1 = {"foo": "bar"}
