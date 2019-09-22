@@ -1,28 +1,16 @@
-import os
-from dataclasses import dataclass
 import logging
-from pathlib import Path
+import os
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
-import yaml
 
-from k8s_jobs.manager import (
-    JobDefinitionsRegister,
-    JobManager,
-    JobSigner,
-    NotFoundException,
-)
+import yaml
+from k8s_jobs.manager import (JobDefinitionsRegister, JobManager, JobSigner,
+                              NotFoundException)
 from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
 
 logger = logging.getLogger(__name__)
-
-
-# def env_var_name(name: str) -> str:
-#     """
-#     Returns a snake-cased and uppercased version of the given string
-#     """
-#     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-#     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
 
 @dataclass
@@ -93,9 +81,9 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         self._maybe_reload_job_definitions()
         return {
             job_definition.name: JobGenerator(
-                YamlFileSpecSource(job_definition.spec_path)
-                if job_definition.spec_path
-                else StaticJobSpecSource(job_definition.spec)
+                StaticJobSpecSource(job_definition.spec)
+                if job_definition.spec
+                else YamlFileSpecSource(job_definition.spec_path)
             )
             for job_definition in self.job_definitions
         }
