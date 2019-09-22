@@ -3,9 +3,9 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
-
+from typing import Dict, Optional
 import yaml
+
 from k8s_jobs.manager import (
     JobDefinitionsRegister,
     JobManager,
@@ -34,8 +34,8 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
     """
 
     def __init__(self, job_definitions_file: str):
-        self._job_definitions_lock = threading.Lock()
-        self._job_definitions: List[JobDefinition] = []
+        self._lock = threading.Lock()
+        self.generators: Dict[str, JobGenerator] = None
         self._job_definitions_file = job_definitions_file
         self._job_definitions_last_modified: float = 0
 
@@ -47,7 +47,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         """
         return self.generators[job_definition_name]
 
-    def _maybe_reload_job_definitions(self):
+    def _maybe_reload(self):
         """
         See if the job_definitions config file has been modified. If so, update the
         internal state
@@ -60,7 +60,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
             )
             return
 
-        with self._job_definitions_lock:
+        with self._lock:
             if statbuf.mtime == self._job_definitions_last_modified:
                 return
 
@@ -71,24 +71,24 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
 
         job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
 
-        with self._job_definitions_lock:
+        with self._lock:
             # CAS
             if statbuf.mtime != self._job_definitions_last_modified:
                 return
-            self._job_definitions = job_definitions
             self._job_definitions_last_modified = statbuf.mtime
+            self.generators = {
+                job_definition.name: JobGenerator(
+                    StaticJobSpecSource(job_definition.spec)
+                    if job_definition.spec
+                    else YamlFileSpecSource(job_definition.spec_path)
+                )
+                for job_definition in job_definitions
+            }
 
     @property
     def generators(self) -> Dict[str, JobGenerator]:
-        self._maybe_reload_job_definitions()
-        return {
-            job_definition.name: JobGenerator(
-                StaticJobSpecSource(job_definition.spec)
-                if job_definition.spec
-                else YamlFileSpecSource(job_definition.spec_path)
-            )
-            for job_definition in self.job_definitions
-        }
+        self._maybe_reload()
+        return self.generators
 
 
 class JobManagerFactory:
