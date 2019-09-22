@@ -6,8 +6,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
-from k8s_jobs.manager import (JobDefinitionsRegister, JobManager, JobSigner,
-                              NotFoundException)
+from k8s_jobs.manager import (
+    JobDefinitionsRegister,
+    JobManager,
+    JobSigner,
+    NotFoundException,
+)
 from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
 
 logger = logging.getLogger(__name__)
@@ -35,15 +39,13 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         self._job_definitions_file = job_definitions_file
         self._job_definitions_last_modified: float = 0
 
+    @NotFoundException.wraps_key_error
     def get_generator(self, job_definition_name) -> JobGenerator:
         """
         Raises:
             NotFoundException
         """
-        try:
-            return self.generators[job_definition_name]
-        except KeyError:
-            raise NotFoundException(f"Unknown job definition {job_definition_name}")
+        return self.generators[job_definition_name]
 
     def _maybe_reload_job_definitions(self):
         """
@@ -96,6 +98,10 @@ class JobManagerFactory:
 
     @classmethod
     def from_env(cls) -> "JobManagerFactory":
+        """
+        Creates a JobManagerFactory that will auto-reload any changes to
+        job_definitions, from environment variables
+        """
         signature = os.environ[cls.JOB_SIGNATURE_ENV_VAR]
         namespace = os.environ[cls.JOB_NAMESPACE_ENV_VAR]
         job_definitions_file = os.environ[cls.JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR]

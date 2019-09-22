@@ -1,35 +1,18 @@
-import os
-from unittest.mock import Mock
-
-from k8s_jobs.config import EnvJobManagerFactory
+from k8s_jobs.config import JobManagerFactory, ReloadingJobDefinitionsRegister
 
 
 class TestEnvJobManagerFactory:
-    def test_job_definition_config_path(self):
-        config_root = "/foo/bar"
-        job_definition_name = "jd1"
-        f = EnvJobManagerFactory(
-            "namespace", "signature", config_root, {job_definition_name: Mock()}
-        )
+    def test_job_definition_from_env(self):
+        f = JobManagerFactory.from_env()
+        assert f is None
 
-        assert (
-            f.job_definition_config_path(job_definition_name)
-            == config_root + "/" + job_definition_name
-        )
 
-    def test_job_definition_config_path_override(self):
-        job_definition_name = "jd1"
-        f = EnvJobManagerFactory(
-            "namespace", "signature", "foo", {job_definition_name: Mock()}
-        )
-        custom_path = "/custom/path"
+class TestReloadingJobDefinitionsRegister:
+    def test_reloads_job_definitions(self):
+        assert False
 
-        os.environ[
-            EnvJobManagerFactory.JOB_DEFINITION_PATH_ENV_PREFIX + "JD1"
-        ] = custom_path
-        try:
-            assert f.job_definition_config_path(job_definition_name) == custom_path
-        finally:
-            del os.environ[EnvJobManagerFactory.JOB_DEFINITION_PATH_ENV_PREFIX + "JD1"]
+    def test_static_spec(self):
+        assert False
 
-        assert f.job_definition_config_path(job_definition_name) != custom_path
+    def test_file_spec(self):
+        assert False

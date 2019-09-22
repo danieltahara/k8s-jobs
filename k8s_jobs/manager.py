@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+import functools
 import logging
 import math
 import threading
@@ -11,6 +12,23 @@ from kubernetes import client
 from k8s_jobs.spec import JobGenerator
 
 logger = logging.getLogger(__name__)
+
+# TODO: Find the circumstances under which to raise this. Plus add tests.
+class NotFoundException(Exception):
+    """
+    Exception indicating job definition or job cannot be found
+    """
+
+    @classmethod
+    def wraps_key_error(cls, fn):
+        @functools.wraps(fn)
+        def inner(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except KeyError as e:
+                raise NotFoundException(str(e))
+
+        return inner
 
 
 class JobSigner:
@@ -69,13 +87,18 @@ class JobDefinitionsRegister(ABC):
         raise NotImplementedError()
 
 
-# TODO: Find the circumstances under which to raise this. Plus add tests.
-class NotFoundException(Exception):
-    """
-    Exception indicating job definition or job cannot be found
-    """
+class StaticJobDefinitionsRegister(JobDefinitionsRegister):
+    def __init__(self, job_generators: Optional[Dict[str, JobGenerator]] = None):
+        job_generators = job_generators or {}
+        self.job_generators = job_generators
 
-    pass
+    @NotFoundException.wraps_key_error
+    def get_generator(self, job_definition_name: str) -> JobGenerator:
+        """
+        Raises:
+            NotFoundException
+        """
+        return self.job_generators[job_definition_name]
 
 
 class JobManager:
@@ -91,15 +114,12 @@ class JobManager:
     JOB_LOGS_LIMIT_BYTES = 1024 ** 3
 
     def __init__(
-        self,
-        namespace: str,
-        signer: JobSigner,
-        job_definitions_register: JobDefinitionsRegister,
+        self, namespace: str, signer: JobSigner, register: JobDefinitionsRegister
     ):
 
         self.namespace = namespace
         self.signer = signer
-        self.job_definitions_register = job_definitions_register
+        self.register = register
 
     def create_job(
         self, job_definition_name: str, template_args: Optional[Dict] = None
@@ -110,7 +130,7 @@ class JobManager:
         Raises:
             NotFoundException: If job_definition doesn't exist
         """
-        job = self.job_definitions_register.get(job_definition_name).generate(
+        job = self.register.get_generator(job_definition_name).generate(
             template_args=template_args
         )
         self.signer.sign(job, job_definition_name)
