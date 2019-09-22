@@ -6,7 +6,7 @@ authors = ["Daniel Tahara <dktahara@gmail.com>"]
 license = "Apache-2.0"
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = ">=3.6,<3.8"
 kubernetes = "^10.0"
 jinja2 = "^2.10"
 dataclasses = "^0.6.0"
@@ -18,3 +18,7 @@ flask = "^1.1"
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py36', 'py37']
