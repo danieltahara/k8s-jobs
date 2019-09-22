@@ -23,20 +23,19 @@ spec:
           imagePullPolicy: Always
           env:
             # Required variables
-            - name: JOB_DEFINITIONS_CONFIG_ROOT
-              value: /etc/config/
             - name: JOB_SIGNATURE
               value: xyz0123456
             - name: JOB_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # Manual override for job definition `pi`
-            - name: JOB_DEFINITION_PATH_PI
-              value: /etc/config2/pi-job-definition
+            - name: JOB_DEFINITIONS_CONFIG_PATH
+              value: /etc/config/job-definitions
           volumeMounts:
           - name: job-definitions-volume
             mountPath: /etc/config
+          # Note that the spec_path field of the job definition must be kept in-sync
+          # with this mount/path
           - name: pi-volume
             mountPath: /etc/config2/
   volumes:

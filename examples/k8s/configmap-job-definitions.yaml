@@ -9,70 +9,55 @@ data:
   # future if need be.
   job_definitions: |
     - name: pi
+      # Note that this must be kept in sync with the actual mounted path
+      spec_path: /etc/config2/pi-job-definition
     - name: fail
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: fail
+        spec:
+          template:
+            spec:
+              containers:
+              - name: fail
+                image: ubuntu
+                command: ["/bin/sh"]
+                args: ["exit", "1"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 600
     - name: timeout
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: timeout
+        spec:
+          template:
+            spec:
+              containers:
+              - name: timeout
+                image: ubuntu
+                command: ["/bin/sh"]
+                args: ["sleep", "1000"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 10
     - name: template
-  # Each job_definition must have a job configuration under the key specified by its name, or be
-  # specified in a custom config map with an environment variable pointing to its mounted location.
-  pi: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: pi
-    spec:
-      template:
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: {{ name }}
         spec:
-          containers:
-          - name: pi
-            image: perl
-            command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
-          restartPolicy: Never
-      backoffLimit: 0
-      activeDeadlineSeconds: 600
-  fail: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: fail
-    spec:
-      template:
-        spec:
-          containers:
-          - name: fail
-            image: ubuntu
-            command: ["/bin/sh"]
-            args: ["exit", "1"]
-          restartPolicy: Never
-      backoffLimit: 0
-      activeDeadlineSeconds: 600
-  timeout: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: timeout
-    spec:
-      template:
-        spec:
-          containers:
-          - name: timeout
-            image: ubuntu
-            command: ["/bin/sh"]
-            args: ["sleep", "1000"]
-          restartPolicy: Never
-      backoffLimit: 0
-      activeDeadlineSeconds: 10
-  template: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: {{ name }}
-    spec:
-      template:
-        spec:
-          containers:
-          - name: {{ name }}
-            image: ubuntu
-            command: ["echo", "{{ name }}"]
-          restartPolicy: Never
-      backoffLimit: 0
-      activeDeadlineSeconds: 600
+          template:
+            spec:
+              containers:
+              - name: {{ name }}
+                image: ubuntu
+                command: ["echo", "{{ name }}"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 600
