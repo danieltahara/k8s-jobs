@@ -13,11 +13,11 @@ class FileReloader:
     """
 
     def __init__(self, path: str):
+        self.path = path
         self._lock = threading.Lock()
-        self._path = path
         self._last_modified: float = 0
 
-    def maybe_update(
+    def maybe_reload(
         self
     ) -> Generator[io.TextIOBase, Optional[Callable[[], None]], None]:
         """
@@ -27,25 +27,25 @@ class FileReloader:
         they wish to retain the underlying thread-safety of this object.
         """
         try:
-            statbuf = Path(self._path).stat()
+            statbuf = Path(self.path).stat()
         except FileNotFoundError:
-            logger.warning(f"Could not find job_definitions_file {self._path}")
+            logger.warning(f"Could not find job_definitions_file {self.path}")
             return
 
         with self._lock:
             last_modified = self._last_modified
-            if statbuf.mtime <= last_modified:
+            if statbuf.st_mtime <= last_modified:
                 return
 
         # Note that this read is not atomic with the statbuf check, since we don't want
         # to do IO under a lock, hence the CAS below.
-        with open(self._file, "r") as f:
+        with open(self.path, "r") as f:
             update_callback = yield f
 
         with self._lock:
             # CAS
             if last_modified == self._last_modified:
-                self._last_modified = statbuf.mtime
+                self._last_modified = statbuf.st_mtime
                 if update_callback:
                     update_callback()
 

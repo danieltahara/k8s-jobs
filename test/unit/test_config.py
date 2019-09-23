@@ -16,7 +16,7 @@ def MockReloader():
         def __init__(self, return_values: List[List[Dict]]):
             self.return_values = return_values
 
-        def maybe_update(self):
+        def maybe_reload(self):
             if len(self.return_values) == 0:
                 return
 
@@ -83,14 +83,14 @@ class TestReloadingJobDefinitionsRegister:
         mock_reloader = MockReloader([[]])
         register = ReloadingJobDefinitionsRegister(mock_reloader)
 
-        mock_reloader.maybe_update.assert_called_once()
-        mock_reloader.maybe_update.reset_mock()
+        mock_reloader.maybe_reload.assert_called_once()
+        mock_reloader.maybe_reload.reset_mock()
 
         # Handles the NOP, so no exception
         _ = register.generators
 
-        mock_reloader.maybe_update.assert_called_once()
-        mock_reloader.maybe_update.reset_mock()
+        mock_reloader.maybe_reload.assert_called_once()
+        mock_reloader.maybe_reload.reset_mock()
 
     def test_not_found(self, MockReloader):
         mock_reloader = MockReloader([[]])

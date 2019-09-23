@@ -48,7 +48,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         See if the job_definitions config file has been modified. If so, update the
         internal state
         """
-        update = self._reloader.maybe_update()
+        update = self._reloader.maybe_reload()
 
         try:
             reader = next(update)
