@@ -206,6 +206,9 @@ class JobManager:
             return True
         return False
 
+    def is_complete(self, job: client.V1Job) -> bool:
+        return self.is_candidate_for_deletion(job, retention_period_sec=0)
+
     def delete_old_jobs(
         self,
         *,
