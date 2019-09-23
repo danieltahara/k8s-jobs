@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-import functools
 import logging
 import math
 import threading
@@ -10,25 +9,9 @@ from typing import Callable, Dict, Iterator, Optional, Union
 from kubernetes import client
 
 from k8s_jobs.spec import JobGenerator
+from k8s_jobs.exceptions import NotFoundException, remaps_exception
 
 logger = logging.getLogger(__name__)
-
-# TODO: Find the circumstances under which to raise this. Plus add tests.
-class NotFoundException(Exception):
-    """
-    Exception indicating job definition or job cannot be found
-    """
-
-    @classmethod
-    def wraps_key_error(cls, fn):
-        @functools.wraps(fn)
-        def inner(*args, **kwargs):
-            try:
-                return fn(*args, **kwargs)
-            except KeyError as e:
-                raise NotFoundException(str(e))
-
-        return inner
 
 
 class JobSigner:
@@ -92,7 +75,7 @@ class StaticJobDefinitionsRegister(JobDefinitionsRegister):
         job_generators = job_generators or {}
         self.job_generators = job_generators
 
-    @NotFoundException.wraps_key_error
+    @remaps_exception({KeyError: NotFoundException})
     def get_generator(self, job_definition_name: str) -> JobGenerator:
         """
         Raises:

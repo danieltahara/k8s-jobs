@@ -1,17 +1,14 @@
+from dataclasses import dataclass
+import functools
 import logging
 import os
 import threading
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Optional
 import yaml
 
-from k8s_jobs.manager import (
-    JobDefinitionsRegister,
-    JobManager,
-    JobSigner,
-    NotFoundException,
-)
+from k8s_jobs.exceptions import NotFoundException, remaps_exception
+from k8s_jobs.file_reloader import FileReloader
+from k8s_jobs.manager import JobDefinitionsRegister, JobManager, JobSigner
 from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
 
 logger = logging.getLogger(__name__)
@@ -33,13 +30,12 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
     appropriate JobGenerator
     """
 
-    def __init__(self, job_definitions_file: str):
+    def __init__(self, reloader: FileReloader):
+        self._reloader = reloader
         self._lock = threading.Lock()
-        self.generators: Dict[str, JobGenerator] = None
-        self._job_definitions_file = job_definitions_file
-        self._job_definitions_last_modified: float = 0
+        self._maybe_reload()
 
-    @NotFoundException.wraps_key_error
+    @remaps_exception({KeyError: NotFoundException})
     def get_generator(self, job_definition_name) -> JobGenerator:
         """
         Raises:
@@ -52,43 +48,35 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         See if the job_definitions config file has been modified. If so, update the
         internal state
         """
+        update = self._reloader.maybe_update()
+
         try:
-            statbuf = Path(self._job_definitions_file).stat()
-        except FileNotFoundError:
-            logger.warning(
-                f"Could not find job_definitions_file {self._job_definitions_file}"
-            )
+            reader = next(update)
+        except StopIteration:
             return
 
-        with self._lock:
-            if statbuf.mtime == self._job_definitions_last_modified:
-                return
-
-        # Note that this read is not atomic with the statbuf check, since we don't want
-        # to do IO under a lock, hence the CAS below.
-        with open(self.job_definitions_file, "r") as f:
-            job_definitions_dicts = yaml.safe_load(f)
-
+        job_definitions_dicts = yaml.safe_load(reader)
         job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
+        generators = {
+            job_definition.name: JobGenerator(
+                StaticJobSpecSource(job_definition.spec)
+                if job_definition.spec
+                else YamlFileSpecSource(job_definition.spec_path)
+            )
+            for job_definition in job_definitions
+        }
 
+        update.send(functools.partial(self._set_generators, generators))
+
+    def _set_generators(self, generators: Dict[str, JobGenerator]):
         with self._lock:
-            # CAS
-            if statbuf.mtime != self._job_definitions_last_modified:
-                return
-            self._job_definitions_last_modified = statbuf.mtime
-            self.generators = {
-                job_definition.name: JobGenerator(
-                    StaticJobSpecSource(job_definition.spec)
-                    if job_definition.spec
-                    else YamlFileSpecSource(job_definition.spec_path)
-                )
-                for job_definition in job_definitions
-            }
+            self._generators = generators
 
     @property
     def generators(self) -> Dict[str, JobGenerator]:
         self._maybe_reload()
-        return self.generators
+        with self._lock:
+            return self._generators
 
 
 class JobManagerFactory:
@@ -105,7 +93,7 @@ class JobManagerFactory:
         signature = os.environ[cls.JOB_SIGNATURE_ENV_VAR]
         namespace = os.environ[cls.JOB_NAMESPACE_ENV_VAR]
         job_definitions_file = os.environ[cls.JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR]
-        register = ReloadingJobDefinitionsRegister(job_definitions_file)
+        register = ReloadingJobDefinitionsRegister(FileReloader(job_definitions_file))
 
         return cls(namespace, signature, register)
 
@@ -123,5 +111,5 @@ class JobManagerFactory:
         return JobManager(
             namespace=self.namespace,
             signer=JobSigner(self.signature),
-            job_definitions_register=self.register,
+            register=self.register,
         )
