@@ -176,13 +176,19 @@ class JobManager:
         logs = ""
         for pod in response.items:
             logs += f"Pod: {pod.metadata.name}\n"
-            pod_logs = core_v1_client.read_namespaced_pod_log(
-                name=pod.metadata.name,
-                namespace=self.namespace,
-                tail_lines=limit,
-                limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
-                pretty=True,
-            )
+            try:
+                pod_logs = core_v1_client.read_namespaced_pod_log(
+                    name=pod.metadata.name,
+                    namespace=self.namespace,
+                    tail_lines=limit,
+                    limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
+                    pretty=True,
+                )
+            except client.rest.ApiException as e:
+                # TODO: Test
+                if "ContainerCreating" in str(e):
+                    continue
+                raise
             if math.isclose(len(pod_logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
                 logger.warning(
                     f"Log fetch for {job_name} pod {pod.metadata.name} may have exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
@@ -254,7 +260,7 @@ class JobManager:
         Arguments:
             interval_sec: time between loops, including the time it takes to perform a check +
                 delete.
-            **kwargs: Argumetns to delete_old_jobs
+            **kwargs: Arguments to delete_old_jobs
 
         Returns:
             Callable to stop the cleanup loop

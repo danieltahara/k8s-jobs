@@ -1,3 +1,4 @@
+import secrets
 import time
 
 import git
@@ -24,9 +25,15 @@ def register():
 
 @pytest.fixture()
 def manager(request, register):
-    signer = JobSigner(request.node.name)
+    # Add randomness here to make it so we can re-run locally without cleaning up
+    signer = JobSigner(secrets.token_hex(16))
     manager = JobManager("default", signer, register=register)
-    yield manager
+    try:
+        yield manager
+    finally:
+        # But try to clean them up anyway
+        for job in manager.fetch_jobs():
+            manager.delete_job(job)
 
 
 @pytest.mark.k8s_itest
@@ -72,3 +79,4 @@ class TestManager:
 
         manager.delete_old_jobs(retention_period_sec=0)
         assert len(manager.list_jobs()) == 0
+
