@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: job-definitions
+  labels:
+    app: job-server
+data:
+  # List of job-definitions. Each item is an object so that we can add more configuration in the
+  # future if need be.
+  job_definitions: |
+    - name: pi
+      # Note that this must be kept in sync with the actual mounted path
+      spec_path: /etc/config2/pi-job-definition
+    - name: fail
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: fail
+        spec:
+          template:
+            spec:
+              containers:
+              - name: fail
+                image: ubuntu
+                command: ["/bin/sh"]
+                args: ["exit", "1"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 600
+    - name: timeout
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: timeout
+        spec:
+          template:
+            spec:
+              containers:
+              - name: timeout
+                image: ubuntu
+                command: ["/bin/sh"]
+                args: ["sleep", "1000"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 10
+    - name: template
+      spec: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: {{ name }}
+        spec:
+          template:
+            spec:
+              containers:
+              - name: {{ name }}
+                image: ubuntu
+                command: ["echo", "{{ name }}"]
+              restartPolicy: Never
+          backoffLimit: 0
+          activeDeadlineSeconds: 600

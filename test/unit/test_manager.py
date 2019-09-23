@@ -14,7 +14,12 @@ from kubernetes.client import (
 from kubernetes.client.rest import ApiException
 import pytest
 
-from k8s_jobs.manager import JobManager, JobSigner
+from k8s_jobs.manager import (
+    JobManager,
+    JobSigner,
+    NotFoundException,
+    StaticJobDefinitionsRegister,
+)
 from k8s_jobs.spec import JobGenerator, StaticJobSpecSource
 
 
@@ -126,7 +131,9 @@ class TestJobManager:
         g1 = Mock()
         g2 = Mock()
         manager = JobManager(
-            namespace=namespace, signer=Mock(), job_generators={"g1": g1, "g2": g2}
+            namespace=namespace,
+            signer=Mock(),
+            register=StaticJobDefinitionsRegister({"g1": g1, "g2": g2}),
         )
 
         manager.create_job("g2")
@@ -138,9 +145,11 @@ class TestJobManager:
         )
 
     def test_create_job_unknown(self):
-        manager = JobManager(namespace="boohoo", signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace="boohoo", signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
 
-        with pytest.raises(KeyError):
+        with pytest.raises(NotFoundException):
             manager.create_job("unknown")
 
     def test_create_job_with_template(self, mock_batch_client):
@@ -152,7 +161,7 @@ class TestJobManager:
         manager = JobManager(
             namespace="geerick",
             signer=Mock(),
-            job_generators={job_name: mock_generator},
+            register=StaticJobDefinitionsRegister({job_name: mock_generator}),
         )
         template_args = {"dummy": "template"}
 
@@ -163,7 +172,9 @@ class TestJobManager:
     def test_delete_job(self, mock_batch_client):
         namespace = "whee"
         name = "jobname"
-        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
 
         manager.delete_job(V1Job(metadata=V1ObjectMeta(name=name)))
 
@@ -174,7 +185,9 @@ class TestJobManager:
         )
 
     def test_is_candidate_for_deletion(self):
-        manager = JobManager(namespace="fake", signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace="fake", signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
         now = datetime.now()
         before = now - timedelta(seconds=101)
 
@@ -237,7 +250,9 @@ class TestJobManager:
         ), "Job that failed a while ago should be deleted"
 
     def test_delete_old_jobs_error(self, mock_batch_client):
-        manager = JobManager(namespace="harhar", signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace="harhar", signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
 
         with patch.object(
             manager, "delete_job", side_effect=[ApiException, None]
@@ -252,7 +267,9 @@ class TestJobManager:
                 assert mock_delete_job.call_count == 2
 
     def test_delete_old_jobs_callback(self, mock_batch_client):
-        manager = JobManager(namespace="owahhh", signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace="owahhh", signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
         with patch.object(manager, "delete_job", return_value=None):
             with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
                 with patch.object(
@@ -270,7 +287,9 @@ class TestJobManager:
         )
         namespace = "hellomoto"
         signer = JobSigner("foo")
-        manager = JobManager(namespace=namespace, signer=signer, job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=signer, register=StaticJobDefinitionsRegister()
+        )
 
         assert len(list(manager.fetch_jobs())) == 1
         mock_batch_client.list_namespaced_job.assert_called_once_with(
@@ -284,7 +303,9 @@ class TestJobManager:
             V1JobList(items=[2], metadata=V1ListMeta()),
         ]
         namespace = "blech"
-        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
 
         assert len(list(manager.fetch_jobs())) == 2
         assert mock_batch_client.list_namespaced_job.call_count == 2
@@ -295,7 +316,9 @@ class TestJobManager:
     def test_fetch_jobs_job_definition_name(self, mock_batch_client):
         namespace = "phd"
         signer = JobSigner("school")
-        manager = JobManager(namespace=namespace, signer=signer, job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=signer, register=StaticJobDefinitionsRegister()
+        )
         job_definition_name = "jd"
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
             items=[], metadata=V1ListMeta()
@@ -310,7 +333,9 @@ class TestJobManager:
 
     def test_job_status(self, mock_batch_client):
         namespace = "thisissparta"
-        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
         job_name = "xyzab"
 
         manager.job_status(job_name)
@@ -321,7 +346,9 @@ class TestJobManager:
 
     def test_job_logs(self, mock_core_client):
         namespace = "treesbecomelogs"
-        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
         job_name = "ahoymatey"
         mock_core_client.list_namespaced_pod.return_value.items = [
             V1Pod(metadata=V1ObjectMeta(name="foo"))
@@ -346,7 +373,9 @@ class TestJobManager:
 
     def test_job_logs_multiple(self, mock_core_client):
         namespace = "123"
-        manager = JobManager(namespace=namespace, signer=Mock(), job_generators={})
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
         job_name = "takeyourhandandcomewithme"
         names = ["because", "you"]
         mock_core_client.list_namespaced_pod.return_value.items = [

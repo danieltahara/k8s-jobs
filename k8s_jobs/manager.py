@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from datetime import datetime
 import logging
 import math
@@ -8,6 +9,7 @@ from typing import Callable, Dict, Iterator, Optional, Union
 from kubernetes import client
 
 from k8s_jobs.spec import JobGenerator
+from k8s_jobs.exceptions import NotFoundException, remaps_exception
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +60,28 @@ class JobSigner:
         return selector
 
 
-# TODO: Find the circumstances under which to raise this. Plus add tests.
-class JobNotFoundException(Exception):
-    pass
+class JobDefinitionsRegister(ABC):
+    @abstractmethod
+    def get_generator(self, job_definition_name: str) -> JobGenerator:
+        """
+        Raises:
+            NotFoundException: If job_definition doesn't exist
+        """
+        raise NotImplementedError()
+
+
+class StaticJobDefinitionsRegister(JobDefinitionsRegister):
+    def __init__(self, job_generators: Optional[Dict[str, JobGenerator]] = None):
+        job_generators = job_generators or {}
+        self.job_generators = job_generators
+
+    @remaps_exception({KeyError: NotFoundException})
+    def get_generator(self, job_definition_name: str) -> JobGenerator:
+        """
+        Raises:
+            NotFoundException
+        """
+        return self.job_generators[job_definition_name]
 
 
 class JobManager:
@@ -76,20 +97,23 @@ class JobManager:
     JOB_LOGS_LIMIT_BYTES = 1024 ** 3
 
     def __init__(
-        self, namespace: str, signer: JobSigner, job_generators: Dict[str, JobGenerator]
+        self, namespace: str, signer: JobSigner, register: JobDefinitionsRegister
     ):
 
         self.namespace = namespace
         self.signer = signer
-        self.job_generators = job_generators
+        self.register = register
 
     def create_job(
         self, job_definition_name: str, template_args: Optional[Dict] = None
     ) -> str:
         """
         Spawn a job for the given job_definition_name
+
+        Raises:
+            NotFoundException: If job_definition doesn't exist
         """
-        job = self.job_generators[job_definition_name].generate(
+        job = self.register.get_generator(job_definition_name).generate(
             template_args=template_args
         )
         self.signer.sign(job, job_definition_name)

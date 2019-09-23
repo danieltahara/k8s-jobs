@@ -1,99 +1,115 @@
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import functools
+import logging
 import os
-import re
-from typing import List, Optional
+import threading
+from typing import Dict, Optional
 import yaml
 
-from k8s_jobs.manager import JobManager, JobSigner
-from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
+from k8s_jobs.exceptions import NotFoundException, remaps_exception
+from k8s_jobs.file_reloader import FileReloader
+from k8s_jobs.manager import JobDefinitionsRegister, JobManager, JobSigner
+from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
 
-
-def env_var_name(name: str) -> str:
-    """
-    Returns a snake-cased and uppercased version of the given string
-    """
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class JobDefinition:
     name: str
 
+    # One of the two must be set. Either a) provides an inline job spec/template, or b)
+    # provides a path to an external config file that contains the spec.
+    spec: Optional[str] = None
+    spec_path: Optional[str] = None
 
-class JobManagerFactory(ABC):
-    @abstractmethod
-    def create(self) -> JobManager:
-        raise NotImplementedError()
+
+class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
+    """
+    Concrete JobDefinitionsRegister that checks for config updates and then returns the
+    appropriate JobGenerator
+    """
+
+    def __init__(self, reloader: FileReloader):
+        self._reloader = reloader
+        self._lock = threading.Lock()
+        self._maybe_reload()
+
+    @remaps_exception({KeyError: NotFoundException})
+    def get_generator(self, job_definition_name) -> JobGenerator:
+        """
+        Raises:
+            NotFoundException
+        """
+        return self.generators[job_definition_name]
+
+    def _maybe_reload(self):
+        """
+        See if the job_definitions config file has been modified. If so, update the
+        internal state
+        """
+        update = self._reloader.maybe_reload()
+
+        try:
+            reader = next(update)
+        except StopIteration:
+            return
+
+        job_definitions_dicts = yaml.safe_load(reader)
+        job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
+        generators = {
+            job_definition.name: JobGenerator(
+                StaticJobSpecSource(job_definition.spec)
+                if job_definition.spec
+                else YamlFileSpecSource(job_definition.spec_path)
+            )
+            for job_definition in job_definitions
+        }
+
+        update.send(functools.partial(self._set_generators, generators))
+
+    def _set_generators(self, generators: Dict[str, JobGenerator]):
+        with self._lock:
+            self._generators = generators
+
+    @property
+    def generators(self) -> Dict[str, JobGenerator]:
+        self._maybe_reload()
+        with self._lock:
+            return self._generators
 
 
-# TODO: Continue to rework this. We want the property that you can auto-reload new jobs without
-# kicking the process, hence the desire for job definitions to be defined in a file, but that makes
-# the config pretty dang awkward (TM).
-class EnvJobManagerFactory(JobManagerFactory):
-    JOB_DEFINITIONS_CONFIG_ROOT = "JOB_DEFINITIONS_CONFIG_ROOT"
-    JOB_DEFINITIONS_FILE_NAME = "job_definitions"
-    JOB_DEFINITION_PATH_ENV_PREFIX = "JOB_DEFINITION_PATH_"
+class JobManagerFactory:
     JOB_SIGNATURE_ENV_VAR = "JOB_SIGNATURE"
     JOB_NAMESPACE_ENV_VAR = "JOB_NAMESPACE"
+    JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR = "JOB_DEFINITIONS_CONFIG_PATH"
 
     @classmethod
-    def from_env(cls, config_root: Optional[str] = None) -> "JobManagerFactory":
+    def from_env(cls) -> "JobManagerFactory":
+        """
+        Creates a JobManagerFactory that will auto-reload any changes to
+        job_definitions, from environment variables
+        """
         signature = os.environ[cls.JOB_SIGNATURE_ENV_VAR]
         namespace = os.environ[cls.JOB_NAMESPACE_ENV_VAR]
+        job_definitions_file = os.environ[cls.JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR]
+        register = ReloadingJobDefinitionsRegister(FileReloader(job_definitions_file))
 
-        if not config_root:
-            config_root = cls.JOB_DEFINITIONS_CONFIG_ROOT
-
-        job_definitions_file = config_root + "/" + cls.JOB_DEFINITIONS_FILE_NAME
-        with open(job_definitions_file, "r") as f:
-            job_definitions_dicts = yaml.safe_load(f)
-
-        return cls(
-            namespace,
-            signature,
-            config_root=config_root,
-            job_definitions=[JobDefinition(**d) for d in job_definitions_dicts],
-        )
+        return cls(namespace, signature, register)
 
     def __init__(
-        self,
-        namespace: str,
-        signature: str,
-        config_root: str,
-        job_definitions: List[JobDefinition],
+        self, namespace: str, signature: str, register: JobDefinitionsRegister
     ):
         self.namespace = namespace
         self.signature = signature
-        self.job_definitions = job_definitions
-        self.config_root = config_root
+        self.register = register
 
-    def job_definition_config_path(self, job_definition_name: str) -> str:
-        """
-        Returns the job definition config path, checking for an environment variable override.
-
-        Users can override the path by setting JOB_DEFINITION_PATH_SNAKE_CASE_NAME_IN_ALL_CAPS
-        """
-        return os.environ.get(
-            f"{self.JOB_DEFINITION_PATH_ENV_PREFIX}{env_var_name(job_definition_name)}",
-            self.job_definition_config_default_path(job_definition_name),
-        )
-
-    def job_definition_config_default_path(self, job_definition_name: str) -> str:
-        return self.config_root + "/" + job_definition_name
-
-    def create(self) -> JobManager:
+    def manager(self) -> JobManager:
         """
         Returns a Job manager based on the config
         """
         return JobManager(
             namespace=self.namespace,
             signer=JobSigner(self.signature),
-            job_generators={
-                job_definition_name: JobGenerator(
-                    YamlFileSpecSource(self.config_path(job_definition_name))
-                )
-                for job_definition_name in self.job_definition_names
-            },
+            register=self.register,
         )
