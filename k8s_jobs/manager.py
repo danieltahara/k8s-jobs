@@ -4,7 +4,7 @@ import logging
 import math
 import threading
 import time
-from typing import Callable, Dict, Iterator, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
 
@@ -21,7 +21,7 @@ class JobSigner:
     """
 
     LABEL_KEY = "app.kubernetes.io/managed-by"
-    JOB_DEFINITION_NAME_KEY = "k8s_jobs/job_definition_name"
+    JOB_DEFINITION_NAME_KEY = "job_definition_name"
 
     def __init__(self, signature: str):
         """
@@ -150,6 +150,9 @@ class JobManager:
                 namespace=self.namespace, _continue=response.metadata._continue
             )
             yield from response.items
+
+    def list_jobs(self, **kwargs) -> List[client.V1Job]:
+        return list(self.fetch_jobs(**kwargs))
 
     def job_status(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
