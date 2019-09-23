@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     config = JobManagerFactory.from_env()
 
-    manager = config.generate()
+    manager = config.manager()
 
     retention_period_sec = int(app.config.get("JOB_RETENTION_PERIOD_SEC", "3600"))
     _ = manager.run_background_cleanup(
