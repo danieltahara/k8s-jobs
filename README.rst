@@ -1,6 +1,7 @@
-=========
 K8s Jobs
 =========
+
+.. image:: https://travis-ci.com/danieltahara/k8s-jobs.svg?token=cZTmQ2jMoLFe6Ve33X6M&branch=master
 
 K8s Jobs is a library for implementing an asynchronous job server on Kubernetes. It is
 intended to provide a simple framework for executing single-shot asynchronous jobs or
@@ -28,7 +29,7 @@ recommended that you configure the `Cluster Autoscaler
 <https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler>`_ on this
 instance group to ensure you do not run out of capacity (even better would be something
 like the `Escalator <https://github.com/atlassian/escalator>`_, a batch job-oriented
-autoscaler. This will most closely mirror the behavior of a service like AWS Batch,
+autoscaler). This will most closely mirror the behavior of a service like AWS Batch,
 which automatically adjusts the number of nodes based on workload.
 
 The ``JobManager`` is also responsible for cleaning up terminated (completed or failed)
@@ -71,11 +72,5 @@ To run the sample server locally (make sure you have ``~/.kube/config`` configur
 .. code:: bash
 
   JOB_SIGNATURE=foo JOB_NAMESPACE=default JOB_DEFINITIONS_CONFIG_PATH=path/to/conf python examples/flask/app.py
-
-To run job creation/deletion by hand:
-
-.. code:: bash
-
-  poetry run python examples/crud.py create job-fail
 
 There is a Dockerfile that runs the default server implementation, fronted by UWSGI.
