@@ -58,6 +58,8 @@ class TestManager:
             assert jobs[0].metadata.name == job_name, "Should return the one we created"
             while not manager.is_complete(job_name):
                 time.sleep(0.1)
+            _ = manager.job_status(job_name)
+            _ = manager.job_logs(job_name)
 
         # Delete
         for job_name in all_job_names:
