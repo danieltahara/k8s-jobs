@@ -1,22 +1,22 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: pi
+  name: helloworld
   labels:
     app: job-server
 data:
-  pi: |
+  helloworld: |
     apiVersion: batch/v1
     kind: Job
     metadata:
-      name: pi
+      name: helloworld
     spec:
       template:
         spec:
           containers:
-          - name: pi
-            image: perl
-            command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+          - name: hello
+            image: ubuntu
+            command: ["echo", "helloworld"]
           restartPolicy: Never
       backoffLimit: 0
       activeDeadlineSeconds: 600

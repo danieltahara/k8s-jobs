@@ -4,7 +4,7 @@ import logging
 import math
 import threading
 import time
-from typing import Callable, Dict, Iterator, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
 
@@ -21,7 +21,7 @@ class JobSigner:
     """
 
     LABEL_KEY = "app.kubernetes.io/managed-by"
-    JOB_DEFINITION_NAME_KEY = "k8s_jobs/job_definition_name"
+    JOB_DEFINITION_NAME_KEY = "job_definition_name"
 
     def __init__(self, signature: str):
         """
@@ -75,13 +75,19 @@ class StaticJobDefinitionsRegister(JobDefinitionsRegister):
         job_generators = job_generators or {}
         self.job_generators = job_generators
 
-    @remaps_exception({KeyError: NotFoundException})
+    @remaps_exception(exc_map={KeyError: NotFoundException})
     def get_generator(self, job_definition_name: str) -> JobGenerator:
         """
         Raises:
             NotFoundException
         """
         return self.job_generators[job_definition_name]
+
+
+def is_kubernetes_not_found_exception(e: Exception) -> bool:
+    if isinstance(e, client.rest.ApiException):
+        return e.status == 404
+    return False
 
 
 class JobManager:
@@ -124,7 +130,11 @@ class JobManager:
         logger.debug(response)
         return response.metadata.name
 
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def delete_job(self, job: client.V1Job):
+        """
+        Deletes the job. Note this is not synchronous with the successful API request.
+        """
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
             name=job.metadata.name,
@@ -144,6 +154,7 @@ class JobManager:
                 job_definition_name=job_definition_name
             ),
         )
+
         yield from response.items
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
@@ -151,12 +162,20 @@ class JobManager:
             )
             yield from response.items
 
-    def job_status(self, job_name: str) -> client.V1JobStatus:
+    def list_jobs(self, **kwargs) -> List[client.V1Job]:
+        return list(self.fetch_jobs(**kwargs))
+
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
+    def read_job(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
+        # DO NOT USE read_namespaced_job if you want a filled in status field with
+        # conditions. For some reason list_namespaced_job handles this fine, but not
+        # read_namsepace_job...
         return batch_v1_client.read_namespaced_job_status(
             name=job_name, namespace=self.namespace
         )
 
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def job_logs(self, job_name: str, limit: Optional[int] = 200) -> str:
         """
         Returns the last limit logs from each pod for the job.
@@ -173,13 +192,18 @@ class JobManager:
         logs = ""
         for pod in response.items:
             logs += f"Pod: {pod.metadata.name}\n"
-            pod_logs = core_v1_client.read_namespaced_pod_log(
-                name=pod.metadata.name,
-                namespace=self.namespace,
-                tail_lines=limit,
-                limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
-                pretty=True,
-            )
+            try:
+                pod_logs = core_v1_client.read_namespaced_pod_log(
+                    name=pod.metadata.name,
+                    namespace=self.namespace,
+                    tail_lines=limit,
+                    limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
+                    pretty=True,
+                )
+            except client.rest.ApiException as e:
+                if "ContainerCreating" in str(e):
+                    continue
+                raise
             if math.isclose(len(pod_logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
                 logger.warning(
                     f"Log fetch for {job_name} pod {pod.metadata.name} may have exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
@@ -195,6 +219,9 @@ class JobManager:
         Is candidate for deletion inspects the job status, and if it is in a terminal state and has
         been in that state more than retention_period_sec, deletes the job
         """
+        if not job.status.conditions:
+            return
+
         for condition in job.status.conditions:
             if condition.status != "True":
                 continue
@@ -205,6 +232,10 @@ class JobManager:
                 continue
             return True
         return False
+
+    def job_is_complete(self, job_name: str) -> bool:
+        job = self.read_job(job_name)
+        return self.is_candidate_for_deletion(job, retention_period_sec=0)
 
     def delete_old_jobs(
         self,
@@ -248,7 +279,7 @@ class JobManager:
         Arguments:
             interval_sec: time between loops, including the time it takes to perform a check +
                 delete.
-            **kwargs: Argumetns to delete_old_jobs
+            **kwargs: Arguments to delete_old_jobs
 
         Returns:
             Callable to stop the cleanup loop

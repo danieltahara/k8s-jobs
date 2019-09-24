@@ -1,7 +1,7 @@
 import functools
-from typing import Dict, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
-# TODO: Find the circumstances under which to raise this. Plus add tests.
+
 class NotFoundException(Exception):
     """
     Exception indicating job definition or job cannot be found
@@ -10,11 +10,27 @@ class NotFoundException(Exception):
     pass
 
 
-def remaps_exception(exc_map: Dict[Type[Exception], Type[Exception]]):
+def remaps_exception(
+    exc_map: Optional[Dict[Type[Exception], Type[Exception]]] = None,
+    matchers: Optional[
+        List[Tuple[Callable[[Exception], bool], Type[Exception]]]
+    ] = None,
+):
     """
-    Returns a decorator that will take all exceptions of the types indicated by the keys
-    of `exc_map` and wrap them in exceptions of the corresponding value
+    Returns a decorator that will re-raise an exception according to the arguments.
+
+    In determining a remap, the exc_map preceeds matchers, and matchers are tested in
+    order.
+
+    Arguments:
+        exc_map:
+            A type -> type mapping. If the raised exception is a key of this map, it
+            will be re-raised under its corresponding value.
+        matchers:
+           A list of tuples of match conditions and an exception to wrap in.
     """
+    exc_map = exc_map or {}
+    matchers = matchers or []
 
     def decorator(fn):
         @functools.wraps(fn)
@@ -24,6 +40,9 @@ def remaps_exception(exc_map: Dict[Type[Exception], Type[Exception]]):
             except Exception as e:
                 if type(e) in exc_map:
                     raise exc_map[type(e)](e)
+                for matches, exc_type in matchers:
+                    if matches(e):
+                        raise exc_type(e)
                 raise
 
         return inner

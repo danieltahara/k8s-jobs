@@ -8,9 +8,9 @@ data:
   # List of job-definitions. Each item is an object so that we can add more configuration in the
   # future if need be.
   job_definitions: |
-    - name: pi
+    - name: helloworld
       # Note that this must be kept in sync with the actual mounted path
-      spec_path: /etc/config2/pi-job-definition
+      spec_path: /etc/config2/helloworld-job-definition
     - name: fail
       spec: |
         apiVersion: batch/v1

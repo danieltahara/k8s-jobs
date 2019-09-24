@@ -24,7 +24,7 @@ into a working application.
 
 The ``JobManager`` is responsible for creating (templated) jobs given a job definition
 name and template arguments. It is recommended that the jobs target a dedicated node
-instance group so as not to content with live application resources. It is further
+instance group so as not to contend with live application resources. It is further
 recommended that you configure the `Cluster Autoscaler
 <https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler>`_ on this
 instance group to ensure you do not run out of capacity (even better would be something
@@ -72,5 +72,3 @@ To run the sample server locally (make sure you have ``~/.kube/config`` configur
 .. code:: bash
 
   JOB_SIGNATURE=foo JOB_NAMESPACE=default JOB_DEFINITIONS_CONFIG_PATH=path/to/conf python examples/flask/app.py
-
-There is a Dockerfile that runs the default server implementation, fronted by UWSGI.

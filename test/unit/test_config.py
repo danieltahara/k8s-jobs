@@ -1,3 +1,4 @@
+import copy
 from io import StringIO
 import os
 from typing import Dict, List
@@ -12,15 +13,16 @@ from k8s_jobs.exceptions import NotFoundException
 
 @pytest.fixture
 def MockReloader():
-    class PytestDisallowsClassFixtures:
-        def __init__(self, return_values: List[List[Dict]]):
-            self.return_values = return_values
+    def make_mock_because_pytest_disallows_class_fixtures(
+        return_values: List[List[Dict]]
+    ):
+        return_values = copy.deepcopy(return_values)
 
-        def maybe_reload(self):
-            if len(self.return_values) == 0:
+        def maybe_reload():
+            if len(return_values) == 0:
                 return
 
-            r = self.return_values.pop()
+            r = return_values.pop()
 
             cb = yield StringIO(yaml.dump(r))
 
@@ -28,14 +30,13 @@ def MockReloader():
 
             yield None
 
-    def make_mock(return_values):
-        m = mock.Mock(wraps=PytestDisallowsClassFixtures(return_values))
+        m = mock.Mock(maybe_reload=mock.Mock(wraps=maybe_reload))
         return m
 
-    yield make_mock
+    yield make_mock_because_pytest_disallows_class_fixtures
 
 
-class TestEnvJobManagerFactory:
+class TestJobManagerFactory:
     @mock.patch.dict(
         os.environ,
         {

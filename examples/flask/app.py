@@ -21,16 +21,16 @@ def create(job_definition_name: str):
 def list():
     job_definition_name = request.args.get("job_definition_name", None)
 
-    jobs = app.manager.fetch_jobs(job_definition_name)
+    jobs = app.manager.list_jobs(job_definition_name)
 
     return jsonify({"jobs": {job.metadata.name: job.metadata.status for job in jobs}})
 
 
 @app.route("/jobs/<job_name>/status", methods=["GET"])
 def status(job_name: str):
-    status = app.manager.job_status()
+    job = app.manager.read_job(job_name)
 
-    return jsonify(status)
+    return jsonify(job.status)
 
 
 @app.route("/jobs/<job_name>/logs", methods=["GET"])

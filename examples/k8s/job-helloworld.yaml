@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: pi
+  name: hello
 spec:
   template:
     spec:
       containers:
-      - name: pi
-        image: perl
-        command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      - name: hello
+        image: ubuntu
+        command: ["echo", "helloworld"]
       restartPolicy: Never
   backoffLimit: 0
   activeDeadlineSeconds: 600
