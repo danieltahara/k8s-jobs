@@ -132,6 +132,9 @@ class JobManager:
 
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def delete_job(self, job: client.V1Job):
+        """
+        Deletes the job. Note this is not synchronous with the successful API request.
+        """
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
             name=job.metadata.name,
@@ -151,19 +154,24 @@ class JobManager:
                 job_definition_name=job_definition_name
             ),
         )
-        yield from response.items
+
+        # For some reason list/read job includes only a partial status, so refetch it
+        # with status.
+        yield from map(self.job, [job.metadata.name for job in response.items])
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
                 namespace=self.namespace, _continue=response.metadata._continue
             )
-            yield from response.items
+            yield from map(self.job, [job.metadata.name for job in response.items])
 
     def list_jobs(self, **kwargs) -> List[client.V1Job]:
         return list(self.fetch_jobs(**kwargs))
 
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
-    def job_status(self, job_name: str) -> client.V1JobStatus:
+    def job(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
+        # DO NOT USE read_namespaced_job if you want a filled in status field with
+        # conditions.
         return batch_v1_client.read_namespaced_job_status(
             name=job_name, namespace=self.namespace
         )
@@ -212,9 +220,9 @@ class JobManager:
         Is candidate for deletion inspects the job status, and if it is in a terminal state and has
         been in that state more than retention_period_sec, deletes the job
         """
-        # TODO: test
         if not job.status.conditions:
-            return False
+            return
+
         for condition in job.status.conditions:
             if condition.status != "True":
                 continue
@@ -225,6 +233,10 @@ class JobManager:
                 continue
             return True
         return False
+
+    def job_is_complete(self, job_name: str) -> bool:
+        job = self.job(job_name)
+        return self.is_candidate_for_deletion(job, retention_period_sec=0)
 
     def delete_old_jobs(
         self,

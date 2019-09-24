@@ -17,7 +17,7 @@ ALL_JOB_DEFINITION_NAMES = ["job-helloworld", "job-fail", "job-timeout", "job-te
 pytestmark = [
     pytest.mark.k8s_itest,
     pytest.mark.usefixtures("k8s_fixture"),
-    pytest.mark.timeout(60),
+    pytest.mark.timeout(30),
 ]
 
 
@@ -45,12 +45,13 @@ def manager(request, register):
             manager.delete_job(job)
 
 
-def wait_for_completion(manager: JobManager, job_name: str) -> bool:
-    batch_v1_client = client.BatchV1Api()
-    job = batch_v1_client.read_namespaced_job(
-        name=job_name, namespace=manager.namespace
-    )
-    while not manager.is_candidate_for_deletion(job, retention_period_sec=0):
+def wait_for_completion(manager: JobManager, job_name: str):
+    while not manager.job_is_complete(job_name):
+        time.sleep(0.1)
+
+
+def wait_for_deletion(manager: JobManager):
+    while len(manager.list_jobs()) > 0:
         time.sleep(0.1)
 
 
@@ -66,18 +67,18 @@ class TestManager:
             all_job_names.append(job_name)
 
             # Read
-            _ = manager.job_status(job_name)
+            _ = manager.job(job_name)
             _ = manager.job_logs(job_name)
             jobs = manager.list_jobs(job_definition_name=job_definition_name)
             assert len(jobs) == 1, "Should only have one job for the job_definition"
             assert jobs[0].metadata.name == job_name, "Should return the one we created"
             wait_for_completion(manager, job_name)
-            _ = manager.job_status(job_name)
+            _ = manager.job(job_name)
             _ = manager.job_logs(job_name)
 
         # Delete
         manager.delete_old_jobs(retention_period_sec=0)
-        assert len(manager.list_jobs()) == 0
+        wait_for_deletion(manager)
 
     def test_delete_old_jobs(self, manager):
         NUM_JOBS = 3
@@ -92,11 +93,9 @@ class TestManager:
         manager.delete_old_jobs(retention_period_sec=3600)
         assert len(manager.list_jobs()) == NUM_JOBS
 
-        # Doesn't propagate immediately
         manager.delete_old_jobs(retention_period_sec=0)
-        while len(manager.list_jobs()) > 0:
-            time.sleep(0.1)
+        wait_for_deletion(manager)
 
     def test_not_found(self, manager):
         with pytest.raises(NotFoundException):
-            manager.job_status("foobar")
+            manager.job("foobar")
