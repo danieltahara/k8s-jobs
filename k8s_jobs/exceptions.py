@@ -29,6 +29,8 @@ def remaps_exception(
         matchers:
            A list of tuples of match conditions and an exception to wrap in.
     """
+    exc_map = exc_map or {}
+    matchers = matchers or []
 
     def decorator(fn):
         @functools.wraps(fn)
