@@ -20,7 +20,6 @@ from k8s_jobs.manager import (
     NotFoundException,
     StaticJobDefinitionsRegister,
 )
-from k8s_jobs.spec import JobGenerator, StaticJobSpecSource
 
 
 @pytest.fixture
@@ -83,43 +82,6 @@ class TestJobSignatureGenerator:
             signer.label_selector(),
             f"{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name}",
         ]
-
-
-class TestJobGenerator:
-    def test_unique_names(self):
-        generator = JobGenerator(
-            StaticJobSpecSource(
-                V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-            )
-        )
-
-        j1 = generator.generate()
-        j2 = generator.generate()
-
-        assert (
-            j1.metadata.name != j2.metadata.name
-        ), "Each generated job must have a unique name"
-
-    def test_generate_with_dict_config(self):
-        job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-        generator = JobGenerator(StaticJobSpecSource(job.to_dict()))
-
-        j = generator.generate()
-        assert (
-            j["metadata"]["name"] != job.metadata.name
-        ), "Should have mutated job name"
-
-    def test_generate_with_template_args(self):
-        mock_config_source = Mock()
-        mock_config_source.get.return_value = V1Job(
-            metadata=V1ObjectMeta(name="anotherone")
-        )
-        generator = JobGenerator(mock_config_source)
-        template_args = {"foo": "bar"}
-
-        generator.generate(template_args=template_args)
-
-        mock_config_source.get.assert_called_once_with(template_args=template_args)
 
 
 class TestJobManager:
@@ -370,6 +332,27 @@ class TestJobManager:
             limit_bytes=ANY,
             pretty=True,
         )
+
+    def test_job_logs_not_ready(self, mock_core_client):
+        namespace = "notready"
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
+        )
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(metadata=V1ObjectMeta(name="foo"))
+        ]
+        mock_core_client.read_namespaced_pod_log.side_effect = ApiException(
+            http_resp=Mock(
+                data={
+                    "message": 'container "hello" in pod "hello-50ac1a4c086b2a4493081d5a55c6f5cf92ac5bb61c51fc4c-h5jsd" is waiting to start: ContainerCreating'
+                }
+            )
+        )
+
+        # No exception
+        logs = manager.job_logs("whatever")
+
+        assert logs == "Pod: foo\n"
 
     def test_job_logs_multiple(self, mock_core_client):
         namespace = "123"

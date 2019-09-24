@@ -194,7 +194,6 @@ class JobManager:
                     pretty=True,
                 )
             except client.rest.ApiException as e:
-                # TODO: Test
                 if "ContainerCreating" in str(e):
                     continue
                 raise

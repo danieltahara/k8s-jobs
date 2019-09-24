@@ -5,6 +5,7 @@ import git
 import kubernetes.client as client
 import pytest
 
+from k8s_jobs.exceptions import NotFoundException
 from k8s_jobs.manager import JobManager, JobSigner, StaticJobDefinitionsRegister
 from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
 
@@ -95,3 +96,7 @@ class TestManager:
         manager.delete_old_jobs(retention_period_sec=0)
         while len(manager.list_jobs()) > 0:
             time.sleep(0.1)
+
+    def test_not_found(self, manager):
+        with pytest.raises(NotFoundException):
+            manager.job_status("foobar")

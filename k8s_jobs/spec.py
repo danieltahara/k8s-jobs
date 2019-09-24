@@ -62,7 +62,7 @@ class JobGenerator:
         """
         config = self.config_source.get(template_args=template_args)
         if isinstance(config, client.V1Job):
-            config.metadata.name += f"-{secrets.token_hex(24)}"
+            config.metadata.name = f"job-{secrets.token_hex(24)}"
         else:
-            config["metadata"]["name"] += f"-{secrets.token_hex(24)}"
+            config["metadata"]["name"] += f"job-{secrets.token_hex(24)}"
         return config
