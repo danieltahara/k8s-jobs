@@ -36,15 +36,15 @@ spec:
             mountPath: /etc/config
           # Note that the spec_path field of the job definition must be kept in-sync
           # with this mount/path
-          - name: pi-volume
+          - name: helloworld-volume
             mountPath: /etc/config2/
   volumes:
     - name: job-definitions-volume
       configMap:
         name: job-definitions
-    - name: pi-volume
+    - name: helloworld-volume
       configMap:
-        name: pi
+        name: helloworld
         items:
-          - key: pi
-            path: pi-job-definition
+          - key: helloworld
+            path: helloworld-job-definition

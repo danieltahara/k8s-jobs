@@ -75,13 +75,19 @@ class StaticJobDefinitionsRegister(JobDefinitionsRegister):
         job_generators = job_generators or {}
         self.job_generators = job_generators
 
-    @remaps_exception({KeyError: NotFoundException})
+    @remaps_exception(exc_map={KeyError: NotFoundException})
     def get_generator(self, job_definition_name: str) -> JobGenerator:
         """
         Raises:
             NotFoundException
         """
         return self.job_generators[job_definition_name]
+
+
+def is_kubernetes_not_found_exception(e: Exception) -> bool:
+    if isinstance(e, client.rest.ApiException):
+        return e.status == 404
+    return False
 
 
 class JobManager:
@@ -124,6 +130,7 @@ class JobManager:
         logger.debug(response)
         return response.metadata.name
 
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def delete_job(self, job: client.V1Job):
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.delete_namespaced_job(
@@ -154,12 +161,14 @@ class JobManager:
     def list_jobs(self, **kwargs) -> List[client.V1Job]:
         return list(self.fetch_jobs(**kwargs))
 
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def job_status(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
         return batch_v1_client.read_namespaced_job_status(
             name=job_name, namespace=self.namespace
         )
 
+    @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def job_logs(self, job_name: str, limit: Optional[int] = 200) -> str:
         """
         Returns the last limit logs from each pod for the job.
@@ -204,6 +213,9 @@ class JobManager:
         Is candidate for deletion inspects the job status, and if it is in a terminal state and has
         been in that state more than retention_period_sec, deletes the job
         """
+        # TODO: test
+        if not job.status.conditions:
+            return False
         for condition in job.status.conditions:
             if condition.status != "True":
                 continue
@@ -214,9 +226,6 @@ class JobManager:
                 continue
             return True
         return False
-
-    def is_complete(self, job: client.V1Job) -> bool:
-        return self.is_candidate_for_deletion(job, retention_period_sec=0)
 
     def delete_old_jobs(
         self,
