@@ -46,12 +46,12 @@ def manager(request, register):
 
 def wait_for_completion(manager: JobManager, job_name: str):
     while not manager.job_is_complete(job_name):
-        time.sleep(0.1)
+        time.sleep(1)
 
 
 def wait_for_deletion(manager: JobManager):
     while len(manager.list_jobs()) > 0:
-        time.sleep(0.1)
+        time.sleep(1)
 
 
 class TestManager:
