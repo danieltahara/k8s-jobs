@@ -245,7 +245,7 @@ class TestJobManager:
 
     def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
-            items=[1], metadata=V1ListMeta()
+            items=[V1Job(metadata=V1ObjectMeta(name="1"))], metadata=V1ListMeta()
         )
         namespace = "hellomoto"
         signer = JobSigner("foo")
@@ -261,8 +261,13 @@ class TestJobManager:
     def test_fetch_jobs_continue(self, mock_batch_client):
         _continue = "xyz"
         mock_batch_client.list_namespaced_job.side_effect = [
-            V1JobList(items=[1], metadata=V1ListMeta(_continue=_continue)),
-            V1JobList(items=[2], metadata=V1ListMeta()),
+            V1JobList(
+                items=[V1Job(metadata=V1ObjectMeta(name="1"))],
+                metadata=V1ListMeta(_continue=_continue),
+            ),
+            V1JobList(
+                items=[V1Job(metadata=V1ObjectMeta(name="2"))], metadata=V1ListMeta()
+            ),
         ]
         namespace = "blech"
         manager = JobManager(
@@ -293,14 +298,14 @@ class TestJobManager:
             label_selector=signer.label_selector(job_definition_name),
         )
 
-    def test_job_status(self, mock_batch_client):
+    def test_read_job(self, mock_batch_client):
         namespace = "thisissparta"
         manager = JobManager(
             namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
         )
         job_name = "xyzab"
 
-        manager.job_status(job_name)
+        manager.read_job(job_name)
 
         mock_batch_client.read_namespaced_job_status.assert_called_once_with(
             name=job_name, namespace=namespace

@@ -28,7 +28,7 @@ def list():
 
 @app.route("/jobs/<job_name>/status", methods=["GET"])
 def status(job_name: str):
-    job = app.manager.job(job_name)
+    job = app.manager.read_job(job_name)
 
     return jsonify(job.status)
 

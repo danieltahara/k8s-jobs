@@ -2,7 +2,6 @@ import secrets
 import time
 
 import git
-import kubernetes.client as client
 import pytest
 
 from k8s_jobs.exceptions import NotFoundException
@@ -67,13 +66,13 @@ class TestManager:
             all_job_names.append(job_name)
 
             # Read
-            _ = manager.job(job_name)
+            _ = manager.read_job(job_name)
             _ = manager.job_logs(job_name)
             jobs = manager.list_jobs(job_definition_name=job_definition_name)
             assert len(jobs) == 1, "Should only have one job for the job_definition"
             assert jobs[0].metadata.name == job_name, "Should return the one we created"
             wait_for_completion(manager, job_name)
-            _ = manager.job(job_name)
+            _ = manager.read_job(job_name)
             _ = manager.job_logs(job_name)
 
         # Delete
@@ -98,4 +97,4 @@ class TestManager:
 
     def test_not_found(self, manager):
         with pytest.raises(NotFoundException):
-            manager.job("foobar")
+            manager.read_job("foobar")

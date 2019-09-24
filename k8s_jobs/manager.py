@@ -157,18 +157,18 @@ class JobManager:
 
         # For some reason list/read job includes only a partial status, so refetch it
         # with status.
-        yield from map(self.job, [job.metadata.name for job in response.items])
+        yield from map(self.read_job, [job.metadata.name for job in response.items])
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
                 namespace=self.namespace, _continue=response.metadata._continue
             )
-            yield from map(self.job, [job.metadata.name for job in response.items])
+            yield from map(self.read_job, [job.metadata.name for job in response.items])
 
     def list_jobs(self, **kwargs) -> List[client.V1Job]:
         return list(self.fetch_jobs(**kwargs))
 
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
-    def job(self, job_name: str) -> client.V1JobStatus:
+    def read_job(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
         # DO NOT USE read_namespaced_job if you want a filled in status field with
         # conditions.
@@ -235,7 +235,7 @@ class JobManager:
         return False
 
     def job_is_complete(self, job_name: str) -> bool:
-        job = self.job(job_name)
+        job = self.read_job(job_name)
         return self.is_candidate_for_deletion(job, retention_period_sec=0)
 
     def delete_old_jobs(
