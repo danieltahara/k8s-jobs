@@ -155,14 +155,12 @@ class JobManager:
             ),
         )
 
-        # For some reason list/read job includes only a partial status, so refetch it
-        # with status.
-        yield from map(self.read_job, [job.metadata.name for job in response.items])
+        yield from response.items
         while response.metadata._continue:
             response = batch_v1_client.list_namespaced_job(
                 namespace=self.namespace, _continue=response.metadata._continue
             )
-            yield from map(self.read_job, [job.metadata.name for job in response.items])
+            yield from response.items
 
     def list_jobs(self, **kwargs) -> List[client.V1Job]:
         return list(self.fetch_jobs(**kwargs))
@@ -171,7 +169,8 @@ class JobManager:
     def read_job(self, job_name: str) -> client.V1JobStatus:
         batch_v1_client = client.BatchV1Api()
         # DO NOT USE read_namespaced_job if you want a filled in status field with
-        # conditions.
+        # conditions. For some reason list_namespaced_job handles this fine, but not
+        # read_namsepace_job...
         return batch_v1_client.read_namespaced_job_status(
             name=job_name, namespace=self.namespace
         )
