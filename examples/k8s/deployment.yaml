@@ -48,3 +48,17 @@ spec:
         items:
           - key: helloworld
             path: helloworld-job-definition
+
+# Ideally this would use an ingress + controller, but keep it simple for now:
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: job-server-nodeport
+spec:
+  selector:
+    app: job-server
+  ports:
+    - protocol: TCP
+      port: 5000
+  type: LoadBalancer
