@@ -38,16 +38,16 @@ spec:
           # with this mount/path
           - name: helloworld-volume
             mountPath: /etc/config2/
-  volumes:
-    - name: job-definitions-volume
-      configMap:
-        name: job-definitions
-    - name: helloworld-volume
-      configMap:
-        name: helloworld
-        items:
-          - key: helloworld
-            path: helloworld-job-definition
+      volumes:
+        - name: job-definitions-volume
+          configMap:
+            name: job-definitions
+        - name: helloworld-volume
+          configMap:
+            name: helloworld
+            items:
+              - key: helloworld
+                path: helloworld-job-definition
 
 # Ideally this would use an ingress + controller, but keep it simple for now:
 ---

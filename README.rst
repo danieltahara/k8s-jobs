@@ -59,7 +59,11 @@ templates into a consistent location. See the ``JobManagerFactory`` for the spec
 required structure.
 
 There is a corresponding dockerfile at ``examples/Dockerfile`` that can be used with the
-templates.
+templates. You can build it as follows:
+
+.. code::
+
+   sudo docker build -t flask-app examples
 
 QuickStart
 ----------
