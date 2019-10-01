@@ -63,7 +63,7 @@ templates. You can build it as follows:
 
 .. code::
 
-   sudo docker build -t flask-app examples
+   docker build -t flask-app -f examples/Dockerfile .
 
 QuickStart
 ----------
