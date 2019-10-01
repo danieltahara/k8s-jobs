@@ -92,8 +92,20 @@ class JobManagerFactory:
         """
         signature = os.environ[cls.JOB_SIGNATURE_ENV_VAR]
         namespace = os.environ[cls.JOB_NAMESPACE_ENV_VAR]
-        job_definitions_file = os.environ[cls.JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR]
-        register = ReloadingJobDefinitionsRegister(FileReloader(job_definitions_file))
+        job_definitions_file_path = os.environ[cls.JOB_DEFINITIONS_CONFIG_PATH_ENV_VAR]
+        return cls.from_vars(signature, namespace, job_definitions_file_path)
+
+    @classmethod
+    def from_vars(
+        cls, signature: str, namespace: str, job_definitions_file_path: str
+    ) -> "JobManagerFactory":
+        """
+        Creates a JobManagerFactory that will auto-reload any changes to
+        job_definitions, from the given variables
+        """
+        register = ReloadingJobDefinitionsRegister(
+            FileReloader(job_definitions_file_path)
+        )
 
         return cls(namespace, signature, register)
 
