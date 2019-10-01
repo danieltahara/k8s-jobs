@@ -58,6 +58,13 @@ be run by the manager.  It relies on ConfigMap volume mounts in order to load th
 templates into a consistent location. See the ``JobManagerFactory`` for the specific
 required structure.
 
+There is a corresponding dockerfile at ``examples/Dockerfile`` that can be used with the
+templates. You can build it as follows:
+
+.. code::
+
+   docker build -t flask-app -f examples/Dockerfile .
+
 QuickStart
 ----------
 

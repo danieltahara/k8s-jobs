@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 
 @app.route("/jobs", methods=["POST"])
-def create(job_definition_name: str):
+def create():
     body = request.get_json()
 
     job_definition_name = body.pop("job_definition_name")
@@ -23,7 +23,7 @@ def list():
 
     jobs = app.manager.list_jobs(job_definition_name)
 
-    return jsonify({"jobs": {job.metadata.name: job.metadata.status for job in jobs}})
+    return jsonify({"jobs": {job.metadata.name: job.status for job in jobs}})
 
 
 @app.route("/jobs/<job_name>/status", methods=["GET"])
@@ -58,4 +58,4 @@ if __name__ == "__main__":
 
     app.manager = manager
 
-    app.run("0.0.0.0")
+    app.run()
