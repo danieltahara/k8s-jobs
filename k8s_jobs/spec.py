@@ -48,6 +48,12 @@ class YamlFileSpecSource(JobSpecSource):
 
 
 class JobGenerator:
+    # I'm not sure the exact behavior when trying to create a job with a name that
+    # already exists. This should give low enough collision odds anyway, as long as job
+    # retention isn't too long.
+    SUFFIX_BYTES = 12
+    MAX_LEN = 63 - 1 - 2 * SUFFIX_BYTES
+
     def __init__(self, config_source: JobSpecSource):
         self.config_source = config_source
 
@@ -61,10 +67,10 @@ class JobGenerator:
         Generates a new job spec with a unique name
         """
         config = self.config_source.get(template_args=template_args)
-        # TODO: Need to note or raise an error if the name is too long. Max length is 63
-        # char, and we're using 25 here, leaving 38.
         if isinstance(config, client.V1Job):
-            config.metadata.name = f"-{secrets.token_hex(12)}"
+            config.metadata.name = f"{config.metadata.name[:self.MAX_LEN]}-{secrets.token_hex(self.SUFFIX_BYTES)}"
         else:
-            config["metadata"]["name"] += f"-{secrets.token_hex(12)}"
+            config["metadata"][
+                "name"
+            ] = f"{config['metadata']['name'][:self.MAX_LEN]}-{secrets.token_hex(self.SUFFIX_BYTES)}"
         return config
