@@ -61,8 +61,10 @@ class JobGenerator:
         Generates a new job spec with a unique name
         """
         config = self.config_source.get(template_args=template_args)
+        # TODO: Need to note or raise an error if the name is too long. Max length is 63
+        # char, and we're using 25 here, leaving 38.
         if isinstance(config, client.V1Job):
-            config.metadata.name = f"job-{secrets.token_hex(24)}"
+            config.metadata.name = f"-{secrets.token_hex(12)}"
         else:
-            config["metadata"]["name"] += f"job-{secrets.token_hex(24)}"
+            config["metadata"]["name"] += f"-{secrets.token_hex(12)}"
         return config
