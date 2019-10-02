@@ -5,14 +5,21 @@ metadata:
   name: job-manager
 rules:
 - apiGroups: ["batch"]
-  resources: ["jobs"]
+  resources:
+    - "jobs"
   verbs: ["create", "get", "list", "delete"]
+- apiGroups: ["batch"]
+  resources:
+    - "jobs/status"
+  verbs: ["get", "list"]
 - apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["list"]
+  resources:
+    - "pods"
+  verbs: ["get", "list"]
 - apiGroups: [""]
-  resources: ["pods/logs"]
-  verbs: ["get"]
+  resources:
+    - "pods/log"
+  verbs: ["get", "list"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
