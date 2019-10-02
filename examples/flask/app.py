@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, jsonify, request
 import kubernetes
 
@@ -23,14 +25,14 @@ def list():
 
     jobs = app.manager.list_jobs(job_definition_name)
 
-    return jsonify({"jobs": {job.metadata.name: job.status for job in jobs}})
+    return jsonify({"jobs": {job.metadata.name: job.status.to_dict() for job in jobs}})
 
 
 @app.route("/jobs/<job_name>/status", methods=["GET"])
 def status(job_name: str):
     job = app.manager.read_job(job_name)
 
-    return jsonify(job.status)
+    return jsonify(job.status.to_dict())
 
 
 @app.route("/jobs/<job_name>/logs", methods=["GET"])
@@ -45,7 +47,12 @@ def healthcheck():
 
 
 if __name__ == "__main__":
-    kubernetes.config.load_kube_config()
+    if os.environ.get("IN_CLUSTER"):
+        # Use a config inferred from the service account the container is running as.
+        kubernetes.config.load_incluster_config()
+    else:
+        # Use ~/.kube/config
+        kubernetes.config.load_kube_config()
 
     config = JobManagerFactory.from_env()
 
