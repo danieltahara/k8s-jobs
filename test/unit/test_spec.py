@@ -67,3 +67,28 @@ class TestJobGenerator:
         generator.generate(template_args=template_args)
 
         mock_config_source.get.assert_called_once_with(template_args=template_args)
+
+    def test_long_name(self):
+        mock_config_source = Mock()
+        mock_config_source.get.return_value = V1Job(
+            metadata=V1ObjectMeta(
+                name="thisisanextremelylongnamethathasalotofcharacters"
+            )
+        )
+        generator = JobGenerator(mock_config_source)
+
+        job = generator.generate()
+
+        assert len(job.metadata.name) == 63
+
+    def test_short_name(self):
+        mock_config_source = Mock()
+        mock_config_source.get.return_value = V1Job(
+            metadata=V1ObjectMeta(name="shortname")
+        ).to_dict()
+        generator = JobGenerator(mock_config_source)
+
+        job = generator.generate()
+
+        assert job["metadata"]["name"].startswith("shortname-")
+        assert len(job["metadata"]["name"]) == 9 + 1 + 2 * JobGenerator.SUFFIX_BYTES

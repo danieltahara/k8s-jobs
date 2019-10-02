@@ -59,7 +59,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
         generators = {
             job_definition.name: JobGenerator(
-                StaticJobSpecSource(job_definition.spec)
+                StaticJobSpecSource(yaml.safe_load(job_definition.spec))
                 if job_definition.spec
                 else YamlFileSpecSource(job_definition.spec_path)
             )

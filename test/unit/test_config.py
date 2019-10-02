@@ -62,7 +62,8 @@ class TestJobManagerFactory:
 class TestReloadingJobDefinitionsRegister:
     def test_static_spec(self, MockReloader):
         spec = {"this": "is", "a": "spec"}
-        mock_reloader = MockReloader([[{"name": "foo", "spec": spec}]])
+        yaml_spec = yaml.dump(spec)
+        mock_reloader = MockReloader([[{"name": "foo", "spec": yaml_spec}]])
 
         with mock.patch(
             "k8s_jobs.config.StaticJobSpecSource"
