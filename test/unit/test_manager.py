@@ -378,3 +378,10 @@ class TestJobManager:
         assert all([name in log for name in names]), "Should print both pod names"
         assert all([log_msg in log for log_msg in log_msgs]), "Should print both logs"
         assert mock_core_client.read_namespaced_pod_log.call_count == 2
+
+    def test_run_background_cleanup(self):
+        manager = JobManager(namespace="foo", signer=Mock(), register=Mock())
+        with patch.object(manager, "delete_old_jobs") as _:
+            stop = manager.run_background_cleanup()
+
+            stop()

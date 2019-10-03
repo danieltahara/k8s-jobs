@@ -1,15 +1,15 @@
-from abc import ABC, abstractmethod
-from datetime import datetime
 import logging
 import math
 import threading
 import time
+from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
 
-from k8s_jobs.spec import JobGenerator
 from k8s_jobs.exceptions import NotFoundException, remaps_exception
+from k8s_jobs.spec import JobGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -290,8 +290,8 @@ class JobManager:
         def run():
             while True:
                 start = time.time()
-                with self._lock:
-                    if self._stopped:
+                with _lock:
+                    if _stopped:
                         return
                 try:
                     self.delete_old_jobs(**kwargs)
@@ -306,5 +306,6 @@ class JobManager:
             with _lock:
                 nonlocal _stopped
                 _stopped = True
+            t.join()
 
         return stop
