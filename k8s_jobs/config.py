@@ -18,10 +18,12 @@ logger = logging.getLogger(__name__)
 class JobDefinition:
     name: str
 
-    # One of the two must be set. Either a) provides an inline job spec/template, or b)
-    # provides a path to an external config file that contains the spec.
+    # Inline (non templated) job-spec
     spec: Optional[str] = None
+    # Path to (potentially templated) job spec file
     spec_path: Optional[str] = None
+    # ConfigMap + data key name for a (potentially templated) job spec
+    spec_config_map_name: Optional[str] = None
 
 
 class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):

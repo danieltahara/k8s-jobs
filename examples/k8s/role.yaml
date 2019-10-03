@@ -26,7 +26,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   namespace: default
-  name: job-server
+  name: job-server-job-manager
 subjects:
 - kind: ServiceAccount
   name: job-server
@@ -34,4 +34,30 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: job-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: config-reader
+rules:
+- apiGroups: [""]
+  resources:
+    - "configmaps"
+  verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: default
+  name: job-server-config-reader
+subjects:
+- kind: ServiceAccount
+  name: job-server
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: config-reader
   apiGroup: rbac.authorization.k8s.io
