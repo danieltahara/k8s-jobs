@@ -9,7 +9,13 @@ import yaml
 from k8s_jobs.exceptions import NotFoundException, remaps_exception
 from k8s_jobs.file_reloader import FileReloader
 from k8s_jobs.manager import JobDefinitionsRegister, JobManager, JobSigner
-from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
+from k8s_jobs.spec import (
+    ConfigMapSpecSource,
+    JobGenerator,
+    JobSpecSource,
+    StaticJobSpecSource,
+    YamlFileSpecSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +28,20 @@ class JobDefinition:
     spec: Optional[str] = None
     # Path to (potentially templated) job spec file
     spec_path: Optional[str] = None
-    # ConfigMap + data key name for a (potentially templated) job spec
+    # ConfigMap + NS for a (potentially templated) job spec. The confg map name and the
+    # key containing the spec are required to be the same.
     spec_config_map_name: Optional[str] = None
+    spec_config_map_namespace: Optional[str] = None
+
+    def spec_source(self) -> JobSpecSource:
+        if self.spec:
+            return StaticJobSpecSource(yaml.safe_load(self.spec))
+        elif self.spec_path:
+            return YamlFileSpecSource(self.spec_path)
+        else:
+            return ConfigMapSpecSource(
+                self.spec_config_map_name, self.spec_config_map_namespace
+            )
 
 
 class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
@@ -60,11 +78,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         job_definitions_dicts = yaml.safe_load(reader)
         job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
         generators = {
-            job_definition.name: JobGenerator(
-                StaticJobSpecSource(yaml.safe_load(job_definition.spec))
-                if job_definition.spec
-                else YamlFileSpecSource(job_definition.spec_path)
-            )
+            job_definition.name: job_definition.spec_source()
             for job_definition in job_definitions
         }
 

@@ -382,6 +382,6 @@ class TestJobManager:
     def test_run_background_cleanup(self):
         manager = JobManager(namespace="foo", signer=Mock(), register=Mock())
         with patch.object(manager, "delete_old_jobs") as _:
-            stop = manager.run_background_cleanup()
+            stop = manager.run_background_cleanup(0)
 
             stop()

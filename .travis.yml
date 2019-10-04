@@ -17,4 +17,4 @@ before_script:
   - sudo microk8s.kubectl config view --raw > $HOME/microk8s.conf
 script:
   - pytest -m "not k8s_itest"
-  - TEST_K8S_CONFIG_PATH=$HOME/microk8s.conf pytest -m k8s_itest
+    #- TEST_K8S_CONFIG_PATH=$HOME/microk8s.conf pytest -m k8s_itest
