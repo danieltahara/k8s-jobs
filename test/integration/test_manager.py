@@ -1,16 +1,12 @@
 import secrets
 import time
 
-import git
 import pytest
 
 from k8s_jobs.exceptions import NotFoundException
 from k8s_jobs.manager import JobManager, JobSigner, StaticJobDefinitionsRegister
 from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
-
-REPO = git.Repo(".", search_parent_directories=True)
-EXAMPLES_ROOT = REPO.working_tree_dir + "/examples/k8s"
-ALL_JOB_DEFINITION_NAMES = ["job-helloworld", "job-fail", "job-timeout", "job-template"]
+from test.fixtures.examples import ALL_JOB_DEFINITION_NAMES, EXAMPLES_ROOT
 
 
 pytestmark = [

@@ -7,35 +7,42 @@ import yaml
 
 import pytest
 
-from k8s_jobs.config import JobManagerFactory, ReloadingJobDefinitionsRegister
+from k8s_jobs.config import (
+    JobDefinition,
+    JobManagerFactory,
+    ReloadingJobDefinitionsRegister,
+)
 from k8s_jobs.exceptions import NotFoundException
+from k8s_jobs.spec import ConfigMapSpecSource, StaticJobSpecSource, YamlFileSpecSource
 
 
-@pytest.fixture
-def MockReloader():
-    def make_mock_because_pytest_disallows_class_fixtures(
-        return_values: List[List[Dict]]
-    ):
-        return_values = copy.deepcopy(return_values)
+class TestJobDefinition:
+    def test_static_spec(self):
+        spec = {"this": "is", "a": "spec"}
+        yaml_spec = yaml.dump(spec)
+        jd = JobDefinition("foo", spec=yaml_spec)
 
-        def maybe_reload():
-            if len(return_values) == 0:
-                return
+        source = jd.spec_source()
 
-            r = return_values.pop()
+        assert isinstance(source, StaticJobSpecSource)
+        assert source.get() == spec
 
-            cb = yield StringIO(yaml.dump(r))
+    def test_file_spec(self):
+        jd = JobDefinition("foo", spec_path="/foo/bar")
 
-            cb()
+        source = jd.spec_source()
 
-            yield None
+        assert isinstance(source, YamlFileSpecSource)
 
-        m = mock.Mock(maybe_reload=mock.Mock(wraps=maybe_reload))
-        return m
+    def test_config_map_spec(self):
+        jd = JobDefinition("foo", spec_config_map_name="configmapfoo")
 
-    yield make_mock_because_pytest_disallows_class_fixtures
+        source = jd.spec_source()
+
+        assert isinstance(source, ConfigMapSpecSource)
 
 
+# TODO: Could probably due to have an itest where I write a real file with a config
 class TestJobManagerFactory:
     @mock.patch.dict(
         os.environ,
@@ -60,26 +67,29 @@ class TestJobManagerFactory:
 
 
 class TestReloadingJobDefinitionsRegister:
-    def test_static_spec(self, MockReloader):
-        spec = {"this": "is", "a": "spec"}
-        yaml_spec = yaml.dump(spec)
-        mock_reloader = MockReloader([[{"name": "foo", "spec": yaml_spec}]])
+    @pytest.fixture
+    def MockReloader(self):
+        def make_mock_because_pytest_disallows_class_fixtures(
+            return_values: List[List[Dict]]
+        ):
+            return_values = copy.deepcopy(return_values)
 
-        with mock.patch(
-            "k8s_jobs.config.StaticJobSpecSource"
-        ) as MockStaticJobSpecSource:
-            _ = ReloadingJobDefinitionsRegister(mock_reloader)
+            def maybe_reload():
+                if len(return_values) == 0:
+                    return
 
-            MockStaticJobSpecSource.assert_called_once_with(spec)
+                r = return_values.pop()
 
-    def test_file_spec(self, MockReloader):
-        spec_path = "/foo/bar"
-        mock_reloader = MockReloader([[{"name": "foo", "spec_path": spec_path}]])
+                cb = yield StringIO(yaml.dump(r))
 
-        with mock.patch("k8s_jobs.config.YamlFileSpecSource") as MockYamlFileSpecSource:
-            _ = ReloadingJobDefinitionsRegister(mock_reloader)
+                cb()
 
-            MockYamlFileSpecSource.assert_called_once_with(spec_path)
+                yield None
+
+            m = mock.Mock(maybe_reload=mock.Mock(wraps=maybe_reload))
+            return m
+
+        yield make_mock_because_pytest_disallows_class_fixtures
 
     def test_reloads(self, MockReloader):
         mock_reloader = MockReloader([[]])

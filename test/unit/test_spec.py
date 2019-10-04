@@ -1,9 +1,14 @@
 from unittest.mock import Mock
 import yaml
 
-from kubernetes.client import V1Job, V1ObjectMeta
+from kubernetes.client import V1ConfigMap, V1Job, V1ObjectMeta
 
-from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
+from k8s_jobs.spec import (
+    ConfigMapSpecSource,
+    JobGenerator,
+    StaticJobSpecSource,
+    YamlFileSpecSource,
+)
 
 
 class TestSpecSource:
@@ -30,6 +35,21 @@ class TestSpecSource:
         c = YamlFileSpecSource(str(tmp_file_name))
 
         assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
+
+    def test_config_map_spec_source(self, mock_core_client):
+        name = "hellodolly"
+        namespace = "ns1"
+        jinja_d = {"biz": "{{ buzz }}"}
+        mock_core_client.read_namespaced_config_map.return_value = V1ConfigMap(
+            metadata=V1ObjectMeta(name=name), data={name: yaml.dump(jinja_d)}
+        )
+
+        c = ConfigMapSpecSource(name, namespace)
+
+        assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
+        mock_core_client.read_namespaced_config_map.assert_called_once_with(
+            name=name, namespace=namespace
+        )
 
 
 class TestJobGenerator:

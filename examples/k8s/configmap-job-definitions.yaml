@@ -5,12 +5,14 @@ metadata:
   labels:
     app: job-server
 data:
-  # List of job-definitions. Each item is an object so that we can add more configuration in the
-  # future if need be.
+  # This will be the filename under the mounted configmap
   job_definitions: |
     - name: helloworld
       # Note that this must be kept in sync with the actual mounted path
       spec_path: /etc/config2/helloworld-job-definition
+    - name: helloworld-via-configmap
+      spec_config_map_name: helloworld
+      spec_config_map_namespace: default
     - name: fail
       spec: |
         apiVersion: batch/v1

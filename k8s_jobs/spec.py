@@ -18,6 +18,7 @@ class JobSpecSource(ABC):
         raise NotImplementedError()
 
 
+# TODO: Provide a templateable version that just takes a string.
 class StaticJobSpecSource(JobSpecSource):
     """
     Static config source that returns the initialized dict. It NOPs against templates
@@ -41,6 +42,38 @@ class YamlFileSpecSource(JobSpecSource):
     def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         jinja2_environment = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
         rendered = jinja2_environment.get_template(self.path).render(
+            template_args or {}
+        )
+        stream = StringIO(rendered)
+        return yaml.safe_load(stream)
+
+
+class ConfigMapSpecSource(JobSpecSource):
+    """
+    Config source that reads a config map of the given name and returns the (templated)
+    job spec stored in the data field under a key of the same name. For example:
+
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: helloworld
+        data:
+          helloworld: |
+            apiVersion: batch/v1
+            kind: Job
+            ...
+    """
+
+    def __init__(self, name: str, namespace: str):
+        self.name = name
+        self.namespace = namespace
+
+    def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
+        core_v1_client = client.CoreV1Api()
+        v1_config_map = core_v1_client.read_namespaced_config_map(
+            name=self.name, namespace=self.namespace
+        )
+        rendered = jinja2.Template(v1_config_map.data[self.name]).render(
             template_args or {}
         )
         stream = StringIO(rendered)
