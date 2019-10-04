@@ -6,6 +6,7 @@ from kubernetes.client import V1Job, V1ObjectMeta
 from k8s_jobs.spec import JobGenerator, StaticJobSpecSource, YamlFileSpecSource
 
 
+# TODO: Tests for configmap spec (mocked unit tests + itest)
 class TestSpecSource:
     def test_yaml_config_source_reloads(self, request, tmp_path):
         d1 = {"foo": "bar"}
