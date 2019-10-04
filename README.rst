@@ -1,7 +1,9 @@
 K8s Jobs
 =========
-
+.. image:: https://badge.fury.io/py/k8s-jobs.svg
+    :target: https://badge.fury.io/py/k8s-jobs
 .. image:: https://travis-ci.com/danieltahara/k8s-jobs.svg?token=cZTmQ2jMoLFe6Ve33X6M&branch=master
+
 
 K8s Jobs is a library for implementing an asynchronous job server on Kubernetes. It is
 intended to provide a simple framework for executing single-shot asynchronous jobs or
