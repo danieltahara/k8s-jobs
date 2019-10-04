@@ -22,18 +22,6 @@ from k8s_jobs.manager import (
 )
 
 
-@pytest.fixture
-def mock_batch_client():
-    with patch("k8s_jobs.manager.client.BatchV1Api") as mock_batch_v1_api:
-        yield mock_batch_v1_api.return_value
-
-
-@pytest.fixture
-def mock_core_client():
-    with patch("k8s_jobs.manager.client.CoreV1Api") as mock_core_v1_api:
-        yield mock_core_v1_api.return_value
-
-
 class TestJobSignatureGenerator:
     def test_sets_label_job(self):
         signature = "hehehe"
