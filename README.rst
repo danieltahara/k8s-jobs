@@ -43,7 +43,7 @@ Controller
 Example Flask Server
 ++++++++++++++++++++
 
-The server is a proof-of-concept impleemtnation intended as a replacement for and
+The server is a proof-of-concept implementation intended as a replacement for and
 extension to AWS Batch. It is a flask application housed completely under
 ``examples/flask``. You do not need to use the server in order to take advantage of the
 primitives on which it relies.
