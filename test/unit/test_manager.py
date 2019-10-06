@@ -328,7 +328,7 @@ class TestJobDeleter:
             "body"
         ].metadata.annotations[deleter.JOB_DELETION_TIME_ANNOTATION]
 
-        assert deletion_time_1 > deletion_time_2
+        assert int(deletion_time_1) > int(deletion_time_2)
 
     def test_mark_deletion_time_existing_annotation(self, mock_batch_client):
         name = "deletionjobalreadyannotated"
@@ -374,10 +374,13 @@ class TestJobDeleter:
             )
         )
 
+    def test_mark_jobs_for_deletion_error(self, mock_batch_client):
+        assert False
+
     def test_delete_old_jobs_error(self, mock_batch_client):
-        manager = JobManager(
-            namespace="harhar", signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
+        manager = Mock()
+        manager.delete_jobs.side_effect = [ApiException, None]
+        deleter = JobDeleter(Mock())
 
         with patch.object(
             manager, "delete_job", side_effect=[ApiException, None]
@@ -407,8 +410,8 @@ class TestJobDeleter:
                     assert mock_callback.call_count == 2
 
     def test_run_background_cleanup(self):
-        manager = JobManager(namespace="foo", signer=Mock(), register=Mock())
-        with patch.object(manager, "delete_old_jobs") as _:
-            stop = manager.run_background_cleanup(0)
+        deleter = JobDeleter(Mock())
+        with patch.object(deleter, "delete_old_jobs") as _:
+            stop = deleter.run_background_cleanup(0)
 
             stop()

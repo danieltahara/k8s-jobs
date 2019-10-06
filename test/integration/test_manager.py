@@ -4,7 +4,12 @@ import time
 import pytest
 
 from k8s_jobs.exceptions import NotFoundException
-from k8s_jobs.manager import JobManager, JobSigner, StaticJobDefinitionsRegister
+from k8s_jobs.manager import (
+    JobDeleter,
+    JobManager,
+    JobSigner,
+    StaticJobDefinitionsRegister,
+)
 from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
 from test.fixtures.examples import ALL_JOB_DEFINITION_NAMES, EXAMPLES_ROOT
 
@@ -72,7 +77,7 @@ class TestManager:
             _ = manager.job_logs(job_name)
 
         # Delete
-        manager.delete_old_jobs(retention_period_sec=0)
+        JobDeleter(manager).delete_old_jobs(retention_period_sec=0)
         wait_for_deletion(manager)
 
     def test_delete_old_jobs(self, manager):
@@ -85,10 +90,10 @@ class TestManager:
         for job_name in job_names:
             wait_for_completion(manager, job_name)
 
-        manager.delete_old_jobs(retention_period_sec=3600)
+        JobDeleter(manager).delete_old_jobs(retention_period_sec=3600)
         assert len(manager.list_jobs()) == NUM_JOBS
 
-        manager.delete_old_jobs(retention_period_sec=0)
+        JobDeleter(manager).delete_old_jobs(retention_period_sec=0)
         wait_for_deletion(manager)
 
     def test_not_found(self, manager):

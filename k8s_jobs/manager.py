@@ -211,13 +211,16 @@ class JobManager:
             logs += "======="
         return logs
 
-    def job_is_finished(self, job: client.V1Job) -> bool:
+    def job_is_finished(self, job: Union[str, client.V1Job]) -> bool:
         """
         Inspects the job status, and if it is in a terminal state, returns True.
 
         See code + tests for what is considered 'terminal' (inferred from inspecting the
         API request/responses and generalizing).
         """
+        if isinstance(job, str):
+            job = self.read_job(job)
+
         if not job.status.conditions:
             return
 
@@ -253,11 +256,14 @@ class JobDeleter:
         explicit action from a user, skips annotation)
         """
 
-        if self.JOB_DELETION_TIME_ANNOTATION in job.metadata.annotations:
+        if (
+            job.metadata.annotations
+            and self.JOB_DELETION_TIME_ANNOTATION in job.metadata.annotations
+        ):
             return
         job.metadata.annotations = job.metadata.annotations or {}
-        job.metadata.annotations[self.JOB_DELETION_TIME_ANNOTATION] = int(
-            time.time() + retention_period_sec
+        job.metadata.annotations[self.JOB_DELETION_TIME_ANNOTATION] = str(
+            int(time.time() + retention_period_sec)
         )
         batch_v1_client = client.BatchV1Api()
         _ = batch_v1_client.patch_namespaced_job(
@@ -274,7 +280,7 @@ class JobDeleter:
         """
         annotations = job.metadata.annotations or {}
         deletion_time = annotations.get(self.JOB_DELETION_TIME_ANNOTATION, None)
-        return deletion_time is not None and deletion_time <= time.time()
+        return deletion_time is not None and int(deletion_time) <= time.time()
 
     def mark_jobs_for_deletion(self, retention_period_sec: int = 3600):
         """
@@ -286,8 +292,11 @@ class JobDeleter:
                 (completed, failed) state to be deleted.
         """
         for job in self.manager.fetch_jobs():
-            if self.manager.job_is_finished(job):
-                self.mark_deletion_time(job, retention_period_sec)
+            try:
+                if self.manager.job_is_finished(job):
+                    self.mark_deletion_time(job, retention_period_sec)
+            except client.ApiException:
+                logger.warning("Error marking job", exc_info=True)
 
     def cleanup_jobs(
         self, *, delete_callback: Optional[Callable[[client.V1Job], None]] = None
@@ -317,10 +326,22 @@ class JobDeleter:
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
+    def delete_old_jobs(
+        self,
+        *,
+        retention_period_sec: int,
+        delete_callback: Optional[Callable[[client.V1Job], None]] = None,
+    ):
+        """
+        Wrapper around a common pattern
+        """
+        self.mark_jobs_for_deletion(retention_period_sec=retention_period_sec)
+        self.cleanup_jobs(delete_callback=delete_callback)
+
     # This is probably better off implemented externally (e.g. as a daemon or a CLI) so
     # is mostly here for reference and as a helper in tests.
     def run_background_cleanup(
-        self, interval_sec: int = 60, retention_period_sec: int = 3600, **kwargs
+        self, interval_sec: int = 60, **kwargs
     ) -> Callable[[None], None]:
         """
         Starts a background thread that cleans up jobs older than retention_period_sec in a loop,
@@ -329,9 +350,7 @@ class JobDeleter:
         Arguments:
             interval_sec: time between loops, including the time it takes to perform a
                 check + delete.
-            retention_period_sec: How long ago a job must have reached a terminal
-                (completed, failed) state to be deleted.
-            **kwargs: Arguments to cleanup_jobs
+            **kwargs: Arguments to delete_old_jobs
 
         Returns:
             Callable to stop the cleanup loop
@@ -346,8 +365,7 @@ class JobDeleter:
                     if _stopped:
                         return
                 try:
-                    self.mark_jobs_for_deletion(retention_period_sec)
-                    self.cleanup_jobs(**kwargs)
+                    self.delete_old_jobs(**kwargs)
                 except Exception as err:
                     logger.warning(err, exc_info=True)
                 time.sleep(max(0, interval_sec - (time.time() - start)))
