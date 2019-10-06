@@ -295,7 +295,7 @@ class JobDeleter:
             try:
                 if self.manager.job_is_finished(job):
                     self.mark_deletion_time(job, retention_period_sec)
-            except client.ApiException:
+            except client.rest.ApiException:
                 logger.warning("Error marking job", exc_info=True)
 
     def cleanup_jobs(
@@ -322,7 +322,7 @@ class JobDeleter:
                 except Exception:
                     logger.warning(f"Error in delete callback", exc_info=True)
                     continue
-                self.delete_job(job)
+                self.manager.delete_job(job)
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 

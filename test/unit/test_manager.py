@@ -345,6 +345,19 @@ class TestJobDeleter:
 
         mock_batch_client.patch_namespaced_job.assert_not_called()
 
+    def test_mark_jobs_for_deletion(self, mock_batch_client):
+        manager = Mock()
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        manager.job_is_finished.side_effect = [True, False]
+        deleter = JobDeleter(manager)
+
+        with patch.object(deleter, "mark_deletion_time") as mock_mark_deletion_time:
+            deleter.mark_jobs_for_deletion(0)
+
+            mock_mark_deletion_time.assert_called_once()
+
+        assert manager.job_is_finished.call_count == 2
+
     def test_is_candidate_for_deletion(self):
         deleter = JobDeleter(Mock())
 
@@ -374,40 +387,28 @@ class TestJobDeleter:
             )
         )
 
-    def test_mark_jobs_for_deletion_error(self, mock_batch_client):
-        assert False
-
-    def test_delete_old_jobs_error(self, mock_batch_client):
+    def test_cleanup_jobs_error(self):
         manager = Mock()
-        manager.delete_jobs.side_effect = [ApiException, None]
-        deleter = JobDeleter(Mock())
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        manager.delete_job.side_effect = [ApiException, None]
+        deleter = JobDeleter(manager)
 
-        with patch.object(
-            manager, "delete_job", side_effect=[ApiException, None]
-        ) as mock_delete_job:
-            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
-                with patch.object(
-                    manager, "is_candidate_for_deletion", return_value=True
-                ):
-                    # Should not raise
-                    manager.delete_old_jobs()
+        with patch.object(deleter, "is_candidate_for_deletion", return_value=True):
+            # Should not raise
+            deleter.cleanup_jobs()
 
-                assert mock_delete_job.call_count == 2
+        assert manager.delete_job.call_count == 2
 
-    def test_delete_old_jobs_callback(self, mock_batch_client):
-        manager = JobManager(
-            namespace="owahhh", signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
-        with patch.object(manager, "delete_job", return_value=None):
-            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
-                with patch.object(
-                    manager, "is_candidate_for_deletion", return_value=True
-                ):
-                    mock_callback = Mock()
+    def test_cleanup_jobs_callback(self):
+        manager = Mock()
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        deleter = JobDeleter(manager)
+        mock_callback = Mock()
 
-                    manager.delete_old_jobs(delete_callback=mock_callback)
+        with patch.object(deleter, "is_candidate_for_deletion", return_value=True):
+            deleter.cleanup_jobs(delete_callback=mock_callback)
 
-                    assert mock_callback.call_count == 2
+        assert mock_callback.call_count == 2
 
     def test_run_background_cleanup(self):
         deleter = JobDeleter(Mock())
