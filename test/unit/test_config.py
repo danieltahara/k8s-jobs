@@ -13,7 +13,7 @@ from k8s_jobs.config import (
     ReloadingJobDefinitionsRegister,
 )
 from k8s_jobs.exceptions import NotFoundException
-from k8s_jobs.spec import ConfigMapSpecSource, StaticJobSpecSource, YamlFileSpecSource
+from k8s_jobs.spec import ConfigMapSpecSource, StaticSpecSource, YamlFileSpecSource
 
 
 class TestJobDefinition:
@@ -24,7 +24,7 @@ class TestJobDefinition:
 
         source = jd.spec_source()
 
-        assert isinstance(source, StaticJobSpecSource)
+        assert isinstance(source, StaticSpecSource)
         assert source.get() == spec
 
     def test_file_spec(self):

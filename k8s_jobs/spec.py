@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
 import copy
+import functools
 from io import StringIO
 import secrets
+import threading
 from typing import Dict, Optional, Union
 import yaml
 
 import jinja2
 from kubernetes import client
+
+from k8s_jobs.file_reloader import FileReloader
 
 
 class JobSpecSource(ABC):
@@ -18,8 +22,7 @@ class JobSpecSource(ABC):
         raise NotImplementedError()
 
 
-# TODO: Provide a templateable version that just takes a string.
-class StaticJobSpecSource(JobSpecSource):
+class StaticSpecSource(JobSpecSource):
     """
     Static config source that returns the initialized dict. It NOPs against templates
     """
@@ -31,21 +34,52 @@ class StaticJobSpecSource(JobSpecSource):
         return copy.deepcopy(self.config)
 
 
+class YamlStringSpecSource(JobSpecSource):
+    """
+    JobSpecSource that returns parsed yaml from a file, with the given template arguments
+    """
+
+    def __init__(self, spec: str):
+        self.spec = spec
+
+    def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
+        rendered = jinja2.Template(self.spec).render(template_args or {})
+        stream = StringIO(rendered)
+        return yaml.safe_load(stream)
+
+
 class YamlFileSpecSource(JobSpecSource):
     """
     SpecSource that reads and returns parsed yaml from a file, with the given template arguments
     """
 
     def __init__(self, path: str):
-        self.path = path
+        self._reloader = FileReloader(path)
+        self._lock = threading.Lock()
+        self._maybe_reload()
+
+    def _maybe_reload(self):
+        update = self._reloader.maybe_reload()
+
+        try:
+            reader = next(update)
+        except StopIteration:
+            return
+
+        spec = reader.read()
+        string_spec_source = YamlStringSpecSource(spec)
+
+        update.send(functools.partial(self._set_string_spec_source, string_spec_source))
+
+    def _set_string_spec_source(self, string_spec_source: YamlStringSpecSource):
+        with self._lock:
+            self._string_spec_source = string_spec_source
 
     def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
-        jinja2_environment = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
-        rendered = jinja2_environment.get_template(self.path).render(
-            template_args or {}
-        )
-        stream = StringIO(rendered)
-        return yaml.safe_load(stream)
+        self._maybe_reload()
+        with self._lock:
+            spec_source = self._string_spec_source
+        return spec_source.get(template_args)
 
 
 class ConfigMapSpecSource(JobSpecSource):
@@ -70,14 +104,14 @@ class ConfigMapSpecSource(JobSpecSource):
 
     def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
         core_v1_client = client.CoreV1Api()
+        # Unfortunately, we have to fetch the whole config map object in order to check
+        # the metadata.resource_version, so we save nothing by trying to only reload
+        # when that value has changed (as yaml parsing is lazy, after templating).
         v1_config_map = core_v1_client.read_namespaced_config_map(
             name=self.name, namespace=self.namespace
         )
-        rendered = jinja2.Template(v1_config_map.data[self.name]).render(
-            template_args or {}
-        )
-        stream = StringIO(rendered)
-        return yaml.safe_load(stream)
+        string_spec_source = YamlStringSpecSource(v1_config_map.data[self.name])
+        return string_spec_source.get(template_args)
 
 
 class JobGenerator:

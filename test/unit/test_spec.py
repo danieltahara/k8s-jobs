@@ -6,7 +6,7 @@ from kubernetes.client import V1ConfigMap, V1Job, V1ObjectMeta
 from k8s_jobs.spec import (
     ConfigMapSpecSource,
     JobGenerator,
-    StaticJobSpecSource,
+    StaticSpecSource,
     YamlFileSpecSource,
 )
 
@@ -55,7 +55,7 @@ class TestSpecSource:
 class TestJobGenerator:
     def test_unique_names(self):
         generator = JobGenerator(
-            StaticJobSpecSource(
+            StaticSpecSource(
                 V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
             )
         )
@@ -69,7 +69,7 @@ class TestJobGenerator:
 
     def test_generate_with_dict_config(self):
         job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-        generator = JobGenerator(StaticJobSpecSource(job.to_dict()))
+        generator = JobGenerator(StaticSpecSource(job.to_dict()))
 
         j = generator.generate()
         assert (
