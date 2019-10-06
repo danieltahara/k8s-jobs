@@ -311,21 +311,22 @@ class TestJobDeleter:
         namespace = "abcxyz"
         manager = Mock(namespace=namespace)
         deleter = JobDeleter(manager)
-        job = V1Job(metadata=V1ObjectMeta(name=name, annotations={}))
 
+        job = V1Job(metadata=V1ObjectMeta(name=name, annotations={}))
         deleter.mark_deletion_time(job, 3600)
         mock_batch_client.patch_namespaced_job.assert_called_once_with(
             name=name, namespace=namespace, body=ANY
         )
-        deletion_time_1 = mock_batch_client.call_args[1]["body"].metadata.annotations[
-            deleter.JOB_DELETION_TIME_ANNOTATION
-        ]
+        deletion_time_1 = mock_batch_client.patch_namespaced_job.call_args[1][
+            "body"
+        ].metadata.annotations[deleter.JOB_DELETION_TIME_ANNOTATION]
         mock_batch_client.reset_mock()
 
+        job = V1Job(metadata=V1ObjectMeta(name=name, annotations={}))
         deleter.mark_deletion_time(job, 0)
-        deletion_time_2 = mock_batch_client.call_args[1]["body"].metadata.annotations[
-            deleter.JOB_DELETION_TIME_ANNOTATION
-        ]
+        deletion_time_2 = mock_batch_client.patch_namespaced_job.call_args[1][
+            "body"
+        ].metadata.annotations[deleter.JOB_DELETION_TIME_ANNOTATION]
 
         assert deletion_time_1 > deletion_time_2
 

@@ -211,7 +211,7 @@ class JobManager:
             logs += "======="
         return logs
 
-    def job_is_finished(self, job: client.V1Job, retention_period_sec: int) -> bool:
+    def job_is_finished(self, job: client.V1Job) -> bool:
         """
         Inspects the job status, and if it is in a terminal state, returns True.
 
