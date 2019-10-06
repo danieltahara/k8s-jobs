@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime
+import time
 from unittest.mock import ANY, Mock, patch
 
 from kubernetes.client import (
@@ -15,6 +16,7 @@ from kubernetes.client.rest import ApiException
 import pytest
 
 from k8s_jobs.manager import (
+    JobDeleter,
     JobManager,
     JobSigner,
     NotFoundException,
@@ -134,102 +136,37 @@ class TestJobManager:
             body=V1DeleteOptions(propagation_policy="Foreground"),
         )
 
-    def test_is_candidate_for_deletion(self):
-        manager = JobManager(
-            namespace="fake", signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
-        now = datetime.now()
-        before = now - timedelta(seconds=101)
+    def test_job_is_finished(self):
+        manager = JobManager(namespace="xyz", signer=Mock(), register=Mock())
 
         job = V1Job(status=V1JobStatus(conditions=[]))
-        assert not manager.is_candidate_for_deletion(job, 100)
+        assert not manager.job_is_finished(job)
 
-        job = V1Job(status=V1JobStatus(conditions=[], completion_time=now))
-        assert not manager.is_candidate_for_deletion(job, 100)
-
-        job = V1Job(
-            status=V1JobStatus(
-                conditions=[
-                    V1JobCondition(
-                        last_transition_time=now, status="True", type="Complete"
-                    )
-                ]
-            )
-        )
-        assert not manager.is_candidate_for_deletion(
-            job, 100
-        ), "A recently completed job should not be deleted"
+        job = V1Job(status=V1JobStatus(conditions=[], completion_time=datetime.now()))
+        assert not manager.job_is_finished(job), "Completion time field is unchecked"
 
         job = V1Job(
             status=V1JobStatus(
-                conditions=[
-                    V1JobCondition(
-                        last_transition_time=before, status="True", type="Complete"
-                    )
-                ]
+                conditions=[V1JobCondition(status="True", type="Complete")]
             )
         )
-        assert manager.is_candidate_for_deletion(
-            job, 100
-        ), "Job that completed a while ago should be deleted"
+        assert manager.job_is_finished(job), "A complete job should be finished"
 
         job = V1Job(
             status=V1JobStatus(
-                conditions=[
-                    V1JobCondition(
-                        last_transition_time=before, status="False", type="Complete"
-                    )
-                ]
+                conditions=[V1JobCondition(status="False", type="Complete")]
             )
         )
-        assert not manager.is_candidate_for_deletion(
-            job, 100
+        assert not manager.job_is_finished(
+            job
         ), "False job status conditions should be ignored"
 
         job = V1Job(
             status=V1JobStatus(
-                conditions=[
-                    V1JobCondition(
-                        last_transition_time=before, status="True", type="Failed"
-                    )
-                ]
+                conditions=[V1JobCondition(status="True", type="Failed")]
             )
         )
-        assert manager.is_candidate_for_deletion(
-            job, 100
-        ), "Job that failed a while ago should be deleted"
-
-    def test_delete_old_jobs_error(self, mock_batch_client):
-        manager = JobManager(
-            namespace="harhar", signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
-
-        with patch.object(
-            manager, "delete_job", side_effect=[ApiException, None]
-        ) as mock_delete_job:
-            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
-                with patch.object(
-                    manager, "is_candidate_for_deletion", return_value=True
-                ):
-                    # Should not raise
-                    manager.delete_old_jobs()
-
-                assert mock_delete_job.call_count == 2
-
-    def test_delete_old_jobs_callback(self, mock_batch_client):
-        manager = JobManager(
-            namespace="owahhh", signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
-        with patch.object(manager, "delete_job", return_value=None):
-            with patch.object(manager, "fetch_jobs", return_value=[Mock(), Mock()]):
-                with patch.object(
-                    manager, "is_candidate_for_deletion", return_value=True
-                ):
-                    mock_callback = Mock()
-
-                    manager.delete_old_jobs(delete_callback=mock_callback)
-
-                    assert mock_callback.call_count == 2
+        assert manager.job_is_finished(job), "A failed job is finished"
 
     def test_fetch_jobs(self, mock_batch_client):
         mock_batch_client.list_namespaced_job.return_value = V1JobList(
@@ -367,9 +304,115 @@ class TestJobManager:
         assert all([log_msg in log for log_msg in log_msgs]), "Should print both logs"
         assert mock_core_client.read_namespaced_pod_log.call_count == 2
 
+
+class TestJobDeleter:
+    def test_mark_deletion_time(self, mock_batch_client):
+        name = "deletionjob"
+        namespace = "abcxyz"
+        manager = Mock(namespace=namespace)
+        deleter = JobDeleter(manager)
+
+        job = V1Job(metadata=V1ObjectMeta(name=name, annotations={}))
+        deleter.mark_deletion_time(job, 3600)
+        mock_batch_client.patch_namespaced_job.assert_called_once_with(
+            name=name, namespace=namespace, body=ANY
+        )
+        deletion_time_1 = mock_batch_client.patch_namespaced_job.call_args[1][
+            "body"
+        ].metadata.annotations[deleter.JOB_DELETION_TIME_ANNOTATION]
+        mock_batch_client.reset_mock()
+
+        job = V1Job(metadata=V1ObjectMeta(name=name, annotations={}))
+        deleter.mark_deletion_time(job, 0)
+        deletion_time_2 = mock_batch_client.patch_namespaced_job.call_args[1][
+            "body"
+        ].metadata.annotations[deleter.JOB_DELETION_TIME_ANNOTATION]
+
+        assert int(deletion_time_1) > int(deletion_time_2)
+
+    def test_mark_deletion_time_existing_annotation(self, mock_batch_client):
+        name = "deletionjobalreadyannotated"
+        namespace = "xyzabc"
+        manager = Mock(namespace=namespace)
+        deleter = JobDeleter(manager)
+        job = V1Job(
+            metadata=V1ObjectMeta(
+                name=name, annotations={JobDeleter.JOB_DELETION_TIME_ANNOTATION: 0}
+            )
+        )
+
+        deleter.mark_deletion_time(job, 0)
+
+        mock_batch_client.patch_namespaced_job.assert_not_called()
+
+    def test_mark_jobs_for_deletion(self, mock_batch_client):
+        manager = Mock()
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        manager.job_is_finished.side_effect = [True, False]
+        deleter = JobDeleter(manager)
+
+        with patch.object(deleter, "mark_deletion_time") as mock_mark_deletion_time:
+            deleter.mark_jobs_for_deletion(0)
+
+            mock_mark_deletion_time.assert_called_once()
+
+        assert manager.job_is_finished.call_count == 2
+
+    def test_is_candidate_for_deletion(self):
+        deleter = JobDeleter(Mock())
+
+        # No annotation
+        assert not deleter.is_candidate_for_deletion(V1Job(metadata=V1ObjectMeta()))
+        assert not deleter.is_candidate_for_deletion(
+            V1Job(metadata=V1ObjectMeta(annotations={}))
+        )
+        # Wayyyy in the past
+        assert deleter.is_candidate_for_deletion(
+            V1Job(
+                metadata=V1ObjectMeta(
+                    annotations={JobDeleter.JOB_DELETION_TIME_ANNOTATION: 0}
+                )
+            )
+        )
+        # Far in the future
+        assert not deleter.is_candidate_for_deletion(
+            V1Job(
+                metadata=V1ObjectMeta(
+                    annotations={
+                        JobDeleter.JOB_DELETION_TIME_ANNOTATION: int(
+                            time.time() + 10000
+                        )
+                    }
+                )
+            )
+        )
+
+    def test_cleanup_jobs_error(self):
+        manager = Mock()
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        manager.delete_job.side_effect = [ApiException, None]
+        deleter = JobDeleter(manager)
+
+        with patch.object(deleter, "is_candidate_for_deletion", return_value=True):
+            # Should not raise
+            deleter.cleanup_jobs()
+
+        assert manager.delete_job.call_count == 2
+
+    def test_cleanup_jobs_callback(self):
+        manager = Mock()
+        manager.fetch_jobs.return_value = [Mock(), Mock()]
+        deleter = JobDeleter(manager)
+        mock_callback = Mock()
+
+        with patch.object(deleter, "is_candidate_for_deletion", return_value=True):
+            deleter.cleanup_jobs(delete_callback=mock_callback)
+
+        assert mock_callback.call_count == 2
+
     def test_run_background_cleanup(self):
-        manager = JobManager(namespace="foo", signer=Mock(), register=Mock())
-        with patch.object(manager, "delete_old_jobs") as _:
-            stop = manager.run_background_cleanup(0)
+        deleter = JobDeleter(Mock())
+        with patch.object(deleter, "mark_and_delete_old_jobs") as _:
+            stop = deleter.run_background_cleanup(0)
 
             stop()

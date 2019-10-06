@@ -4,7 +4,12 @@ import time
 import pytest
 
 from k8s_jobs.exceptions import NotFoundException
-from k8s_jobs.manager import JobManager, JobSigner, StaticJobDefinitionsRegister
+from k8s_jobs.manager import (
+    JobDeleter,
+    JobManager,
+    JobSigner,
+    StaticJobDefinitionsRegister,
+)
 from k8s_jobs.spec import JobGenerator, YamlFileSpecSource
 from test.fixtures.examples import ALL_JOB_DEFINITION_NAMES, EXAMPLES_ROOT
 
@@ -41,7 +46,7 @@ def manager(request, register):
 
 
 def wait_for_completion(manager: JobManager, job_name: str):
-    while not manager.job_is_complete(job_name):
+    while not manager.job_is_finished(job_name):
         time.sleep(1)
 
 
@@ -71,11 +76,10 @@ class TestManager:
             _ = manager.read_job(job_name)
             _ = manager.job_logs(job_name)
 
-        # Delete
-        manager.delete_old_jobs(retention_period_sec=0)
-        wait_for_deletion(manager)
+        for job in manager.fetch_jobs():
+            manager.delete_job(job)
 
-    def test_delete_old_jobs(self, manager):
+    def test_mark_and_delete_old_jobs(self, manager):
         NUM_JOBS = 3
 
         job_names = [manager.create_job("job-helloworld") for i in range(NUM_JOBS)]
@@ -85,10 +89,7 @@ class TestManager:
         for job_name in job_names:
             wait_for_completion(manager, job_name)
 
-        manager.delete_old_jobs(retention_period_sec=3600)
-        assert len(manager.list_jobs()) == NUM_JOBS
-
-        manager.delete_old_jobs(retention_period_sec=0)
+        JobDeleter(manager).mark_and_delete_old_jobs(retention_period_sec=0)
         wait_for_deletion(manager)
 
     def test_not_found(self, manager):
