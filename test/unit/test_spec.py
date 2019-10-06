@@ -1,3 +1,4 @@
+import time
 from unittest.mock import Mock
 import yaml
 
@@ -6,7 +7,7 @@ from kubernetes.client import V1ConfigMap, V1Job, V1ObjectMeta
 from k8s_jobs.spec import (
     ConfigMapSpecSource,
     JobGenerator,
-    StaticJobSpecSource,
+    StaticSpecSource,
     YamlFileSpecSource,
 )
 
@@ -22,8 +23,11 @@ class TestSpecSource:
         c = YamlFileSpecSource(str(tmp_file_name))
         assert d1 == c.get()
 
+        # See FileReloader note about raciness
+        time.sleep(0.01)
         with open(tmp_file_name, "w+") as f:
             yaml.dump(d2, f)
+
         assert d2 == c.get()
 
     def test_yaml_config_source_templates(self, request, tmp_path):
@@ -55,7 +59,7 @@ class TestSpecSource:
 class TestJobGenerator:
     def test_unique_names(self):
         generator = JobGenerator(
-            StaticJobSpecSource(
+            StaticSpecSource(
                 V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
             )
         )
@@ -69,7 +73,7 @@ class TestJobGenerator:
 
     def test_generate_with_dict_config(self):
         job = V1Job(metadata=V1ObjectMeta(name="iloveyouabushelandapeck"))
-        generator = JobGenerator(StaticJobSpecSource(job.to_dict()))
+        generator = JobGenerator(StaticSpecSource(job.to_dict()))
 
         j = generator.generate()
         assert (

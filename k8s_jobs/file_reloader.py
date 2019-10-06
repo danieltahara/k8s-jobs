@@ -17,6 +17,8 @@ class FileReloader:
         self._lock = threading.Lock()
         self._last_modified: float = 0
 
+    # NOTE: ctime/mtime-based change detection is slightly racy depending on the
+    # filesystem precision.
     def maybe_reload(
         self
     ) -> Generator[io.TextIOBase, Optional[Callable[[], None]], None]:
@@ -36,6 +38,8 @@ class FileReloader:
             last_modified = self._last_modified
             if statbuf.st_mtime <= last_modified:
                 return
+
+        logger.info(f"Processing update to {self.path}")
 
         # Note that this read is not atomic with the statbuf check, since we don't want
         # to do IO under a lock, hence the CAS below.

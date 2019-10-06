@@ -13,7 +13,7 @@ from k8s_jobs.spec import (
     ConfigMapSpecSource,
     JobGenerator,
     JobSpecSource,
-    StaticJobSpecSource,
+    YamlStringSpecSource,
     YamlFileSpecSource,
 )
 
@@ -35,7 +35,7 @@ class JobDefinition:
 
     def spec_source(self) -> JobSpecSource:
         if self.spec:
-            return StaticJobSpecSource(yaml.safe_load(self.spec))
+            return YamlStringSpecSource(self.spec)
         elif self.spec_path:
             return YamlFileSpecSource(self.spec_path)
         else:
