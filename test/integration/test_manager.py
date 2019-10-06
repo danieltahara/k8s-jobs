@@ -76,11 +76,10 @@ class TestManager:
             _ = manager.read_job(job_name)
             _ = manager.job_logs(job_name)
 
-        # Delete
-        JobDeleter(manager).delete_old_jobs(retention_period_sec=0)
-        wait_for_deletion(manager)
+        for job in manager.fetch_jobs():
+            manager.delete_job(job)
 
-    def test_delete_old_jobs(self, manager):
+    def test_mark_and_delete_old_jobs(self, manager):
         NUM_JOBS = 3
 
         job_names = [manager.create_job("job-helloworld") for i in range(NUM_JOBS)]
@@ -90,10 +89,7 @@ class TestManager:
         for job_name in job_names:
             wait_for_completion(manager, job_name)
 
-        JobDeleter(manager).delete_old_jobs(retention_period_sec=3600)
-        assert len(manager.list_jobs()) == NUM_JOBS
-
-        JobDeleter(manager).delete_old_jobs(retention_period_sec=0)
+        JobDeleter(manager).mark_and_delete_old_jobs(retention_period_sec=0)
         wait_for_deletion(manager)
 
     def test_not_found(self, manager):

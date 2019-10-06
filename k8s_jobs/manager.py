@@ -326,7 +326,7 @@ class JobDeleter:
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
-    def delete_old_jobs(
+    def mark_and_delete_old_jobs(
         self,
         *,
         retention_period_sec: int,
@@ -350,7 +350,7 @@ class JobDeleter:
         Arguments:
             interval_sec: time between loops, including the time it takes to perform a
                 check + delete.
-            **kwargs: Arguments to delete_old_jobs
+            **kwargs: Arguments to mark_and_delete_old_jobs
 
         Returns:
             Callable to stop the cleanup loop
@@ -365,7 +365,7 @@ class JobDeleter:
                     if _stopped:
                         return
                 try:
-                    self.delete_old_jobs(**kwargs)
+                    self.mark_and_delete_old_jobs(**kwargs)
                 except Exception as err:
                     logger.warning(err, exc_info=True)
                 time.sleep(max(0, interval_sec - (time.time() - start)))

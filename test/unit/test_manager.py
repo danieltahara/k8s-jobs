@@ -412,7 +412,7 @@ class TestJobDeleter:
 
     def test_run_background_cleanup(self):
         deleter = JobDeleter(Mock())
-        with patch.object(deleter, "delete_old_jobs") as _:
+        with patch.object(deleter, "mark_and_delete_old_jobs") as _:
             stop = deleter.run_background_cleanup(0)
 
             stop()
