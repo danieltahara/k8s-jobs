@@ -38,6 +38,28 @@ and to avoid using a feature that is still in Alpha. For more details, see the `
 Controller
 <https://kubernetes.io/docs/concepts/workloads/controllers/ttlafterfinished/>`_.
 
+Labeling and Annotations
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``JobManager`` (and associated objects) makes use of `labels and annotations
+<https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/>`_ in
+order to properly identify and manage jobs. Of note are the following:
+
+Labels:
+
+* ``app.kubernetes.io/managed-by``: A recommended kubernetes label, populated with the
+  value of the ``JobSigner`` signature. This is used to logically identify jobs created
+  by the ``JobManager`` of interest, rather than by third party applications or users.
+* ``job_definition_name``: Identifies the job definition on which the job was based
+  (maps to a name in the manager config).
+
+Annotations:
+* ``job_deletion_time_unix_sec``: If present, the earliest time at which the job can be
+  deleted. It is only set after the job has reached a terminal state. This is meant to
+  help implement baseline retention for resource management purposes, as well as to
+  provide an avenue for users to mark and prevent the deletion of a job so that it can
+  be inspected for debugging.
+
 Example Flask Server
 ++++++++++++++++++++
 
@@ -79,3 +101,6 @@ To run the sample server locally (make sure you have ``~/.kube/config`` configur
 .. code:: bash
 
   JOB_SIGNATURE=foo JOB_NAMESPACE=default JOB_DEFINITIONS_CONFIG_PATH=path/to/conf python examples/flask/app.py
+
+Configuration
+-------------

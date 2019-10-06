@@ -212,12 +212,12 @@ class JobManager:
             logs += "======="
         return logs
 
-    def is_candidate_for_deletion(
-        self, job: client.V1Job, retention_period_sec: int
-    ) -> bool:
+    def job_is_finished(self, job: client.V1Job, retention_period_sec: int) -> bool:
         """
-        Is candidate for deletion inspects the job status, and if it is in a terminal state and has
-        been in that state more than retention_period_sec, deletes the job
+        Inspects the job status, and if it is in a terminal state, returns True.
+
+        See code + tests for what is considered 'terminal' (inferred from inspecting the
+        API request/responses and generalizing).
         """
         if not job.status.conditions:
             return
@@ -227,59 +227,109 @@ class JobManager:
                 continue
             if condition.type not in ["Complete", "Failed"]:
                 continue
-            last_transition_ts = datetime.timestamp(condition.last_transition_time)
-            if last_transition_ts + retention_period_sec > time.time():
-                continue
+            # 'True' status and 'Complete' or 'Failed' type
             return True
         return False
 
-    def job_is_complete(self, job_name: str) -> bool:
-        job = self.read_job(job_name)
-        return self.is_candidate_for_deletion(job, retention_period_sec=0)
 
-    def delete_old_jobs(
-        self,
-        *,
-        delete_callback: Optional[Callable[[client.V1Job], None]] = None,
-        retention_period_sec: int = 3600,
-    ):
+# Note: The way this is currently written (avoiding watch() calls and running on loops)
+# will have limited scalability. This should be fine for **most** use cases, but if you
+# start having jobs pile up, this would be the first thing to optimize.
+class JobDeleter:
+    """
+    Handles retention and deletion of jobs
+    """
+
+    JOB_DELETION_TIME_ANNOTATION = "job_deletion_time_unix_sec"
+
+    def __init__(self, manager: JobManager):
+        self.manager = manager
+
+    def mark_deletion_time(self, job: client.V1Job, retention_period_sec: int) -> bool:
         """
-        Checks the current jobs and deletes any ones that have reached a terminal condition.
+        Annotates the job with a time indicating the earliest point (in epoch
+        seconds) that the job can be collected for deletion.
+
+        If the job has already been annotated (e.g. by another JobDeleter or by
+        explicit action from a user, skips annotation)
+        """
+
+        if self.JOB_DELETION_TIME_ANNOTATION in job.metadata.annotations:
+            return
+        job.metadata.annotations[self.JOB_DELETION_TIME_ANNOTATION] = int(
+            time.time() + retention_period_sec
+        )
+        batch_v1_client = client.BatchV1Api()
+        _ = batch_v1_client.patch_namespaced_job(
+            name=job.metadata.name, namespace=self.manager.namespace, body=job
+        )
+
+    def is_candidate_for_deletion(self, job: client.V1.Job) -> bool:
+        """
+        A job is candidate for deletion if it has a deletion time and that time has
+        been exceeded
+        """
+        deletion_time = job.metadata.annotations.get(
+            self.JOB_deletion_TIME_ANNOTATION, None
+        )
+        return deletion_time and deletion_time <= time.time()
+
+    def mark_jobs_for_deletion(self, retention_period_sec: int = 3600):
+        """
+        Iterates over jobs and marks those in terminal states for future deletion after
+        retention_period_sec
 
         Arguments:
-            retention_period_sec: How long ago a job must have reached a terminal (completed,
-                failed) state to be considered a candidate for cleanup.
-            delete_callback: A callback that is guaranteed to be called at least once before the job
-                is permanently deleted. This can be used to persist job history and state and/or for
-                instrumentation. Any exceptions raised will therefore block cleanup. Callers are
-                expected to monitor such occurences.
+            retention_period_sec: How long ago a job must have reached a terminal
+                (completed, failed) state to be deleted.
         """
-        # NOTE: The amount of mocking in tests for this indicates some code smell. Consider perhaps
-        # refactoring all the deletion/loop logic into its own object.
-        for job in self.fetch_jobs():
+        for job in self.manager.fetch_jobs():
+            if self.manager.job_is_finished(job):
+                self.mark_deletion_time(job, retention_period_sec)
+
+    def cleanup_jobs(
+        self, *, delete_callback: Optional[Callable[[client.V1Job], None]] = None
+    ):
+        """
+        Checks the current jobs and deletes any ones that have reached the end of their
+        retention
+
+        Arguments:
+            delete_callback: A callback that is guaranteed to be called at least once
+                before the job is permanently deleted. This can be used to persist job
+                history and state and/or for instrumentation. Any exceptions raised will
+                therefore block cleanup. Callers are expected to monitor such
+                occurences.
+        """
+        delete_callback = delete_callback or (lambda x: None)
+        for job in self.manager.fetch_jobs():
+            if not self.is_candidate_for_deletion(job):
+                continue
             try:
-                if self.is_candidate_for_deletion(job, retention_period_sec):
-                    if delete_callback:
-                        try:
-                            delete_callback(job)
-                        except Exception:
-                            logger.warning(f"Error in delete callback", exc_info=True)
-                            continue
-                    self.delete_job(job)
+                try:
+                    delete_callback(job)
+                except Exception:
+                    logger.warning(f"Error in delete callback", exc_info=True)
+                    continue
+                self.delete_job(job)
             except client.rest.ApiException:
                 logger.warning(f"Error checking job {job.metadata.name}", exc_info=True)
 
+    # This is probably better off implemented externally (e.g. as a daemon or a CLI) so
+    # is mostly here for reference and as a helper in tests.
     def run_background_cleanup(
-        self, interval_sec: int = 60, **kwargs
+        self, interval_sec: int = 60, retention_period_sec: int = 3600, **kwargs
     ) -> Callable[[None], None]:
         """
         Starts a background thread that cleans up jobs older than retention_period_sec in a loop,
         waiting interval_sec
 
         Arguments:
-            interval_sec: time between loops, including the time it takes to perform a check +
-                delete.
-            **kwargs: Arguments to delete_old_jobs
+            interval_sec: time between loops, including the time it takes to perform a
+                check + delete.
+            retention_period_sec: How long ago a job must have reached a terminal
+                (completed, failed) state to be deleted.
+            **kwargs: Arguments to cleanup_jobs
 
         Returns:
             Callable to stop the cleanup loop
@@ -294,7 +344,8 @@ class JobManager:
                     if _stopped:
                         return
                 try:
-                    self.delete_old_jobs(**kwargs)
+                    self.mark_jobs_for_deletion(retention_period_sec)
+                    self.cleanup_jobs(**kwargs)
                 except Exception as err:
                     logger.warning(err, exc_info=True)
                 time.sleep(max(0, interval_sec - (time.time() - start)))

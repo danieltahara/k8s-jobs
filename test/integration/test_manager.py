@@ -41,7 +41,7 @@ def manager(request, register):
 
 
 def wait_for_completion(manager: JobManager, job_name: str):
-    while not manager.job_is_complete(job_name):
+    while not manager.job_is_finished(job_name):
         time.sleep(1)
 
 
