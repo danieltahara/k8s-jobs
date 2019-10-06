@@ -1,6 +1,8 @@
 K8s Jobs
 =========
 
+.. image:: https://badge.fury.io/py/k8s-jobs.svg
+    :target: https://badge.fury.io/py/k8s-jobs
 .. image:: https://travis-ci.com/danieltahara/k8s-jobs.svg?token=cZTmQ2jMoLFe6Ve33X6M&branch=master
 
 K8s Jobs is a library for implementing an asynchronous job server on Kubernetes. It is
@@ -9,11 +11,8 @@ commands (unlike something like Celery that can have arbitrary fanout and nestin
 well as a server implementation that can stand in as a replacement for AWS Batch and
 trigger jobs on-command.
 
-What's Inside
--------------
-
 Kubernetes Job Management
-+++++++++++++++++++++++++
+-------------------------
 
 This project provides an abstraction around kubernetes APIs to allow you to dynamically
 spawn (templated) jobs and clean up after them when they have run.
@@ -39,7 +38,7 @@ Controller
 <https://kubernetes.io/docs/concepts/workloads/controllers/ttlafterfinished/>`_.
 
 Labeling and Annotations
-~~~~~~~~~~~~~~~~~~~~~~~~
+++++++++++++++++++++++++
 
 The ``JobManager`` (and associated objects) makes use of `labels and annotations
 <https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/>`_ in
@@ -60,10 +59,13 @@ Annotations:
   provide an avenue for users to mark and prevent the deletion of a job so that it can
   be inspected for debugging.
 
-Example Flask Server
-++++++++++++++++++++
+Examples
+--------
 
-The server is a proof-of-concept impleemtnation intended as a replacement for and
+Flask Server
+++++++++++++
+
+The server is a proof-of-concept implementation intended as a replacement for and
 extension to AWS Batch. It is a flask application housed completely under
 ``examples/flask``. You do not need to use the server in order to take advantage of the
 primitives on which it relies.
@@ -101,6 +103,3 @@ To run the sample server locally (make sure you have ``~/.kube/config`` configur
 .. code:: bash
 
   JOB_SIGNATURE=foo JOB_NAMESPACE=default JOB_DEFINITIONS_CONFIG_PATH=path/to/conf python examples/flask/app.py
-
-Configuration
--------------
