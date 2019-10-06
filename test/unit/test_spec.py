@@ -1,3 +1,4 @@
+import time
 from unittest.mock import Mock
 import yaml
 
@@ -22,8 +23,11 @@ class TestSpecSource:
         c = YamlFileSpecSource(str(tmp_file_name))
         assert d1 == c.get()
 
+        # See FileReloader note about raciness
+        time.sleep(0.01)
         with open(tmp_file_name, "w+") as f:
             yaml.dump(d2, f)
+
         assert d2 == c.get()
 
     def test_yaml_config_source_templates(self, request, tmp_path):
