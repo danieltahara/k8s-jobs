@@ -3,7 +3,6 @@ import math
 import threading
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
@@ -256,6 +255,7 @@ class JobDeleter:
 
         if self.JOB_DELETION_TIME_ANNOTATION in job.metadata.annotations:
             return
+        job.metadata.annotations = job.metadata.annotations or {}
         job.metadata.annotations[self.JOB_DELETION_TIME_ANNOTATION] = int(
             time.time() + retention_period_sec
         )
@@ -264,15 +264,17 @@ class JobDeleter:
             name=job.metadata.name, namespace=self.manager.namespace, body=job
         )
 
-    def is_candidate_for_deletion(self, job: client.V1.Job) -> bool:
+    def is_candidate_for_deletion(self, job: client.V1Job) -> bool:
         """
         A job is candidate for deletion if it has a deletion time and that time has
         been exceeded
+
+        It does not care whether the job is finished. Callers should orchestrate the
+        desired semantics.
         """
-        deletion_time = job.metadata.annotations.get(
-            self.JOB_deletion_TIME_ANNOTATION, None
-        )
-        return deletion_time and deletion_time <= time.time()
+        annotations = job.metadata.annotations or {}
+        deletion_time = annotations.get(self.JOB_DELETION_TIME_ANNOTATION, None)
+        return deletion_time is not None and deletion_time <= time.time()
 
     def mark_jobs_for_deletion(self, retention_period_sec: int = 3600):
         """
