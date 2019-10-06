@@ -53,6 +53,7 @@ Labels:
   (maps to a name in the manager config).
 
 Annotations:
+
 * ``job_deletion_time_unix_sec``: If present, the earliest time at which the job can be
   deleted. It is only set after the job has reached a terminal state. This is meant to
   help implement baseline retention for resource management purposes, as well as to
