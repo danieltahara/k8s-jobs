@@ -78,7 +78,7 @@ class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):
         job_definitions_dicts = yaml.safe_load(reader)
         job_definitions = [JobDefinition(**d) for d in job_definitions_dicts]
         generators = {
-            job_definition.name: job_definition.spec_source()
+            job_definition.name: JobGenerator(job_definition.spec_source())
             for job_definition in job_definitions
         }
 
