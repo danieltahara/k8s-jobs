@@ -248,10 +248,10 @@ class TestJobManager:
         log_msg = "this is a log"
         mock_core_client.read_namespaced_pod_log.return_value = log_msg
 
-        log = manager.job_logs(job_name)
+        logs = manager.job_logs(job_name)
 
-        assert log_msg in log
-        assert "foo" in log
+        assert "foo" in logs
+        assert log_msg in logs["foo"]
         mock_core_client.list_namespaced_pod.assert_called_once_with(
             namespace=namespace, label_selector=f"job-name={job_name}"
         )
@@ -282,7 +282,7 @@ class TestJobManager:
         # No exception
         logs = manager.job_logs("whatever")
 
-        assert logs == "Pod: foo\n"
+        assert logs == {"foo": ["ContainerCreating"]}
 
     def test_job_logs_multiple(self, mock_core_client):
         namespace = "123"
@@ -298,10 +298,13 @@ class TestJobManager:
         log_msgs = ["look", "so"]
         mock_core_client.read_namespaced_pod_log.side_effect = log_msgs
 
-        log = manager.job_logs(job_name)
+        logs = manager.job_logs(job_name)
 
-        assert all([name in log for name in names]), "Should print both pod names"
-        assert all([log_msg in log for log_msg in log_msgs]), "Should print both logs"
+        assert all([name in logs for name in names]), "Should print both pod names"
+        for log in log_msgs:
+            assert any(
+                [log in log_lines for log_lines in logs.values()]
+            ), "Should print both logs"
         assert mock_core_client.read_namespaced_pod_log.call_count == 2
 
 
