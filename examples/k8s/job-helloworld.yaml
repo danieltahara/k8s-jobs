@@ -8,7 +8,10 @@ spec:
       containers:
       - name: hello
         image: ubuntu
-        command: ["echo", "helloworld"]
+        command: ["echo", "hello"]
+      - name: world
+        image: ubuntu
+        command: ["echo", "world"]
       restartPolicy: Never
   backoffLimit: 0
   activeDeadlineSeconds: 600
