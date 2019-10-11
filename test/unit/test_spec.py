@@ -2,18 +2,21 @@ import time
 from unittest.mock import Mock
 import yaml
 
+import jinja2
 from kubernetes.client import V1ConfigMap, V1Job, V1ObjectMeta
+import pytest
 
 from k8s_jobs.spec import (
     ConfigMapSpecSource,
     JobGenerator,
     StaticSpecSource,
     YamlFileSpecSource,
+    YamlStringSpecSource,
 )
 
 
 class TestSpecSource:
-    def test_yaml_config_source_reloads(self, request, tmp_path):
+    def test_yaml_file_spec_source_reloads(self, request, tmp_path):
         d1 = {"foo": "bar"}
         d2 = {"biz": "buzz"}
         tmp_file_name = tmp_path / request.node.name
@@ -30,7 +33,7 @@ class TestSpecSource:
 
         assert d2 == c.get()
 
-    def test_yaml_config_source_templates(self, request, tmp_path):
+    def test_yaml_file_spec_source_templates(self, request, tmp_path):
         jinja_d = {"biz": "{{ buzz }}"}
         tmp_file_name = tmp_path / request.node.name
         with open(tmp_file_name, "w+") as f:
@@ -39,6 +42,15 @@ class TestSpecSource:
         c = YamlFileSpecSource(str(tmp_file_name))
 
         assert {"biz": "foo"} == c.get(template_args={"buzz": "foo"})
+
+    def test_yaml_string_spec_source_validates_template(self, request, tmp_path):
+        jinja_d = {"biz": "{{ buzz }}"}
+        c = YamlStringSpecSource(yaml.dump(jinja_d))
+
+        with pytest.raises(jinja2.exceptions.UndefinedError):
+            c.get({"unknown": "var"})
+
+        assert {"biz": "foo"} == c.get(template_args={"buzz": "foo", "extra": "var"})
 
     def test_config_map_spec_source(self, mock_core_client):
         name = "hellodolly"

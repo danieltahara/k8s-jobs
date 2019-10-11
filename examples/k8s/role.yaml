@@ -7,7 +7,7 @@ rules:
 - apiGroups: ["batch"]
   resources:
     - "jobs"
-  verbs: ["create", "get", "list", "delete"]
+  verbs: ["create", "delete", "get", "list", "patch"]
 - apiGroups: ["batch"]
   resources:
     - "jobs/status"
