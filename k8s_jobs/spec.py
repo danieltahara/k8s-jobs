@@ -43,7 +43,19 @@ class YamlStringSpecSource(JobSpecSource):
         self.spec = spec
 
     def get(self, template_args: Optional[Dict] = None) -> Union[client.V1Job, Dict]:
-        rendered = jinja2.Template(self.spec).render(template_args or {})
+        """
+        Returns a strict template, raising exception when expected template args are NOT
+        provided.
+
+        Note that the converse is not true. You are free to provide unnecessary template
+        args.
+
+        Raises:
+            jinja2.exceptions.UndefinedError
+        """
+        rendered = jinja2.Template(self.spec, undefined=jinja2.StrictUndefined).render(
+            template_args or {}
+        )
         stream = StringIO(rendered)
         return yaml.safe_load(stream)
 
