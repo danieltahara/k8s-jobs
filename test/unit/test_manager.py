@@ -3,6 +3,7 @@ import time
 from unittest.mock import ANY, Mock, patch
 
 from kubernetes.client import (
+    V1Container,
     V1DeleteOptions,
     V1Job,
     V1JobCondition,
@@ -11,6 +12,7 @@ from kubernetes.client import (
     V1ListMeta,
     V1ObjectMeta,
     V1Pod,
+    V1PodSpec,
 )
 from kubernetes.client.rest import ApiException
 import pytest
@@ -236,45 +238,79 @@ class TestJobManager:
             name=job_name, namespace=namespace
         )
 
-    def test_job_logs(self, mock_core_client):
+    def test_job_logs_multiple_containers(self, mock_core_client):
         namespace = "treesbecomelogs"
         manager = JobManager(
             namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
         )
         job_name = "ahoymatey"
+        pod_name = "p"
+        container_name_1, container_name_2 = "c1", "c2"
         mock_core_client.list_namespaced_pod.return_value.items = [
-            V1Pod(metadata=V1ObjectMeta(name="foo"))
+            V1Pod(
+                metadata=V1ObjectMeta(name=pod_name),
+                spec=V1PodSpec(
+                    containers=[
+                        V1Container(name=container_name_1),
+                        V1Container(name=container_name_2),
+                    ]
+                ),
+            )
         ]
         log_msg = "this is a log"
         mock_core_client.read_namespaced_pod_log.return_value = log_msg
 
         logs = manager.job_logs(job_name)
 
-        assert "foo" in logs
-        assert log_msg in logs["foo"]
-        mock_core_client.list_namespaced_pod.assert_called_once_with(
-            namespace=namespace, label_selector=f"job-name={job_name}"
+        assert logs == {
+            pod_name: {container_name_1: [log_msg], container_name_2: [log_msg]}
+        }
+
+    def test_job_logs_multiple_pods(self, mock_core_client):
+        namespace = "treesbecomelogs"
+        manager = JobManager(
+            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
         )
-        mock_core_client.read_namespaced_pod_log.assert_called_once_with(
-            name="foo",
-            namespace=namespace,
-            tail_lines=ANY,
-            limit_bytes=ANY,
-            pretty=True,
-        )
+        job_name = "ahoymatey"
+        pod_name_1, pod_name_2 = "p1", "p2"
+        container_name = "c1"
+        mock_core_client.list_namespaced_pod.return_value.items = [
+            V1Pod(
+                metadata=V1ObjectMeta(name=pod_name_1),
+                spec=V1PodSpec(containers=[V1Container(name=container_name)]),
+            ),
+            V1Pod(
+                metadata=V1ObjectMeta(name=pod_name_2),
+                spec=V1PodSpec(containers=[V1Container(name=container_name)]),
+            ),
+        ]
+        log_msg = "this is a log"
+        mock_core_client.read_namespaced_pod_log.return_value = log_msg
+
+        logs = manager.job_logs(job_name)
+
+        assert logs == {
+            pod_name_1: {container_name: [log_msg]},
+            pod_name_2: {container_name: [log_msg]},
+        }
 
     def test_job_logs_not_ready(self, mock_core_client):
         namespace = "notready"
         manager = JobManager(
             namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
         )
+        pod_name = "p"
+        container_name = "c"
         mock_core_client.list_namespaced_pod.return_value.items = [
-            V1Pod(metadata=V1ObjectMeta(name="foo"))
+            V1Pod(
+                metadata=V1ObjectMeta(name=pod_name),
+                spec=V1PodSpec(containers=[V1Container(name=container_name)]),
+            )
         ]
         mock_core_client.read_namespaced_pod_log.side_effect = ApiException(
             http_resp=Mock(
                 data={
-                    "message": 'container "hello" in pod "hello-50ac1a4c086b2a4493081d5a55c6f5cf92ac5bb61c51fc4c-h5jsd" is waiting to start: ContainerCreating'
+                    "message": f'container "{container_name}" in pod "{pod_name}" is waiting to start: ContainerCreating'
                 }
             )
         )
@@ -282,30 +318,7 @@ class TestJobManager:
         # No exception
         logs = manager.job_logs("whatever")
 
-        assert logs == {"foo": ["ContainerCreating"]}
-
-    def test_job_logs_multiple(self, mock_core_client):
-        namespace = "123"
-        manager = JobManager(
-            namespace=namespace, signer=Mock(), register=StaticJobDefinitionsRegister()
-        )
-        job_name = "takeyourhandandcomewithme"
-        names = ["because", "you"]
-        mock_core_client.list_namespaced_pod.return_value.items = [
-            V1Pod(metadata=V1ObjectMeta(name=names[0])),
-            V1Pod(metadata=V1ObjectMeta(name=names[1])),
-        ]
-        log_msgs = ["look", "so"]
-        mock_core_client.read_namespaced_pod_log.side_effect = log_msgs
-
-        logs = manager.job_logs(job_name)
-
-        assert all([name in logs for name in names]), "Should print both pod names"
-        for log in log_msgs:
-            assert any(
-                [log in log_lines for log_lines in logs.values()]
-            ), "Should print both logs"
-        assert mock_core_client.read_namespaced_pod_log.call_count == 2
+        assert logs == {pod_name: {container_name: ["ContainerCreating"]}}
 
 
 class TestJobDeleter:

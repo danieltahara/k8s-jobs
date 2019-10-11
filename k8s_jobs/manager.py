@@ -3,6 +3,7 @@ import math
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
@@ -177,48 +178,52 @@ class JobManager:
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def job_logs(
         self, job_name: str, limit: Optional[int] = 200
-    ) -> Dict[str, List[str]]:
+    ) -> Dict[str, Dict[str, List[str]]]:
         """
         Returns the last limit logs from each pod for the job.
 
-        Currently errors if there are more than 1 container
-
         Returns a dictionary of the following form:
-
         {
-            POD_NAME_1: [
-               line n
-               line n+1
-               ...
-            ],
-            POD_NAME_2: [ ... ]
+            POD_1: {
+                CONTAINER_1: [
+                   line n
+                   line n+1
+                   ...
+                ],
+            },
+            POD_2: { ... }
         }
         """
         core_v1_client = client.CoreV1Api()
         response = core_v1_client.list_namespaced_pod(
             namespace=self.namespace, label_selector=f"job-name={job_name}"
         )
-        logs = {}
+        logs = defaultdict(dict)
         for pod in response.items:
             pod_name = pod.metadata.name
-            try:
-                pod_logs = core_v1_client.read_namespaced_pod_log(
-                    name=pod_name,
-                    namespace=self.namespace,
-                    tail_lines=limit,
-                    limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
-                    pretty=True,
-                )
-            except client.rest.ApiException as e:
-                if "ContainerCreating" in str(e):
-                    logs[pod_name] = ["ContainerCreating"]
-                    continue
-                raise
-            if math.isclose(len(pod_logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1):
-                logger.warning(
-                    f"Log fetch for {job_name} pod {pod.metadata.name} may have exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
-                )
-            logs[pod_name] = pod_logs.split("\n")
+            for container in pod.spec.containers:
+                try:
+                    container_logs = core_v1_client.read_namespaced_pod_log(
+                        name=pod_name,
+                        namespace=self.namespace,
+                        container=container.name,
+                        tail_lines=limit,
+                        limit_bytes=self.JOB_LOGS_LIMIT_BYTES,
+                        pretty=True,
+                    )
+                except client.rest.ApiException as e:
+                    if "ContainerCreating" in str(e):
+                        logs[pod_name][container.name] = ["ContainerCreating"]
+                        continue
+                    raise
+                if math.isclose(
+                    len(container_logs), self.JOB_LOGS_LIMIT_BYTES, rel_tol=0.1
+                ):
+                    logger.warning(
+                        f"Log fetch for {job_name} pod {pod.metadata.name} may have "
+                        "exceeded bytes limit of {self.JOB_LOGS_LIMIT_BYTES}"
+                    )
+                logs[pod_name][container.name] = container_logs.split("\n")
         return logs
 
     def job_is_finished(self, job: Union[str, client.V1Job]) -> bool:
