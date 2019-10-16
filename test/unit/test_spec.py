@@ -52,6 +52,16 @@ class TestSpecSource:
 
         assert {"biz": "foo"} == c.get(template_args={"buzz": "foo", "extra": "var"})
 
+    def test_yaml_string_spec_source_template_vars(self, request, tmp_path):
+        jinja_d = {"biz": "{{ buzz }}"}
+        tmp_file_name = tmp_path / request.node.name
+        with open(tmp_file_name, "w+") as f:
+            yaml.dump(jinja_d, f)
+
+        c = YamlFileSpecSource(str(tmp_file_name))
+
+        assert ["buzz"] == c.template_vars()
+
     def test_config_map_spec_source(self, mock_core_client):
         name = "hellodolly"
         namespace = "ns1"

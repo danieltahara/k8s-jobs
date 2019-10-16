@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "k8s-jobs"
-version = "0.1.9"
+version = "0.1.10"
 description = "Async Job Manager + AWS Batch Replacement for K8s"
 authors = ["Daniel Tahara <dktahara@gmail.com>"]
 repository = "https://github.com/danieltahara/k8s-jobs"
