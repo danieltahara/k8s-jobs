@@ -4,6 +4,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from enum import Enum
 from typing import Callable, Dict, Iterator, List, Optional, Union
 
 from kubernetes import client
@@ -107,6 +108,13 @@ class JobManager:
 
     JOB_LOGS_LIMIT_BYTES = 1024 ** 3
 
+    class JobStatus(Enum):
+        RUNNING = "Running"
+        COMPLETE = "Complete"
+        FAILED = "Failed"
+
+    LogsByPodAndContainer = Dict[str, Dict[str, List[str]]]
+
     def __init__(
         self, namespace: str, signer: JobSigner, register: JobDefinitionsRegister
     ):
@@ -183,7 +191,7 @@ class JobManager:
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
     def job_logs(
         self, job_name: str, limit: Optional[int] = 200
-    ) -> Dict[str, Dict[str, List[str]]]:
+    ) -> "LogsByPodAndContainer":
         """
         Returns the last limit logs from each pod for the job.
 
@@ -203,7 +211,7 @@ class JobManager:
         response = core_v1_client.list_namespaced_pod(
             namespace=self.namespace, label_selector=f"job-name={job_name}"
         )
-        logs = defaultdict(dict)
+        logs: "JobManager.LogsByPodAndContainer" = defaultdict(dict)
         for pod in response.items:
             pod_name = pod.metadata.name
             for container in pod.spec.containers:
@@ -231,6 +239,22 @@ class JobManager:
                 logs[pod_name][container.name] = container_logs.split("\n")
         return logs
 
+    def job_status(self, job: Union[str, client.V1Job]) -> "JobStatus":
+        if isinstance(job, str):
+            job = self.read_job(job)
+
+        if not job.status.conditions:
+            return self.JobStatus.RUNNING
+
+        for condition in job.status.conditions:
+            if condition.status != "True":
+                continue
+            if condition.type == "Complete":
+                return self.JobStatus.COMPLETE
+            elif condition.type == "Failed":
+                return self.JobStatus.FAILED
+        return self.JobStatus.RUNNING
+
     def job_is_finished(self, job: Union[str, client.V1Job]) -> bool:
         """
         Inspects the job status, and if it is in a terminal state, returns True.
@@ -238,20 +262,7 @@ class JobManager:
         See code + tests for what is considered 'terminal' (inferred from inspecting the
         API request/responses and generalizing).
         """
-        if isinstance(job, str):
-            job = self.read_job(job)
-
-        if not job.status.conditions:
-            return
-
-        for condition in job.status.conditions:
-            if condition.status != "True":
-                continue
-            if condition.type not in ["Complete", "Failed"]:
-                continue
-            # 'True' status and 'Complete' or 'Failed' type
-            return True
-        return False
+        return self.job_status(job) in [self.JobStatus.COMPLETE, self.JobStatus.FAILED]
 
 
 # Note: The way this is currently written (avoiding watch() calls and running on loops)
@@ -267,7 +278,7 @@ class JobDeleter:
     def __init__(self, manager: JobManager):
         self.manager = manager
 
-    def mark_deletion_time(self, job: client.V1Job, retention_period_sec: int) -> bool:
+    def mark_deletion_time(self, job: client.V1Job, retention_period_sec: int):
         """
         Annotates the job with a time indicating the earliest point (in epoch
         seconds) that the job can be collected for deletion.
@@ -362,7 +373,7 @@ class JobDeleter:
     # is mostly here for reference and as a helper in tests.
     def run_background_cleanup(
         self, interval_sec: int = 60, **kwargs
-    ) -> Callable[[None], None]:
+    ) -> Callable[[], None]:
         """
         Starts a background thread that cleans up jobs older than retention_period_sec in a loop,
         waiting interval_sec

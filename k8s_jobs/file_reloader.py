@@ -2,7 +2,7 @@ import io
 import logging
 from pathlib import Path
 import threading
-from typing import Callable, Generator, Optional
+from typing import Callable, cast, Generator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class FileReloader:
     # filesystem precision.
     def maybe_reload(
         self
-    ) -> Generator[io.TextIOBase, Optional[Callable[[], None]], None]:
+    ) -> Generator[Optional[io.TextIOWrapper], Optional[Callable[[], None]], None]:
         """
         Checks for an update to the file, and if it detects one, yields a text stream
         reader. Expects a callable to be sent for invocation under a lock, if there was
@@ -44,7 +44,7 @@ class FileReloader:
         # Note that this read is not atomic with the statbuf check, since we don't want
         # to do IO under a lock, hence the CAS below.
         with open(self.path, "r") as f:
-            update_callback = yield f
+            update_callback = yield cast(io.TextIOWrapper, f)
 
         with self._lock:
             # CAS
