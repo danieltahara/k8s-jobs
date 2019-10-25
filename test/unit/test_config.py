@@ -35,7 +35,11 @@ class TestJobDefinition:
         assert isinstance(source, YamlFileSpecSource)
 
     def test_config_map_spec(self):
-        jd = JobDefinition("foo", spec_config_map_name="configmapfoo")
+        jd = JobDefinition(
+            "foo",
+            spec_config_map_name="configmapfoo",
+            spec_config_map_namespace="default",
+        )
 
         source = jd.spec_source()
 
