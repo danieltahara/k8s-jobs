@@ -50,13 +50,18 @@ class JobSigner:
         if job_definition_name:
             labels[self.JOB_DEFINITION_NAME_KEY] = job_definition_name
 
-    def label_selector(self, job_definition_name: Optional[str] = None) -> str:
+    def label_selector(
+        self, job_definition_name: Optional[str] = None, **extra_labels
+    ) -> str:
         """
         Returns the label selector that matches the signature that this signer would add
         """
         selector = f"{self.LABEL_KEY}={self.signature}"
         if job_definition_name:
             selector += f",{self.JOB_DEFINITION_NAME_KEY}={job_definition_name}"
+        if extra_labels:
+            extra_labels_str = ",".join(f"{k}={v}" for k, v in extra_labels.items())
+            selector += f",{extra_labels_str}"
         return selector
 
 
@@ -145,13 +150,13 @@ class JobManager:
         logger.debug(response)
 
     def fetch_jobs(
-        self, job_definition_name: Optional[str] = None
+        self, job_definition_name: Optional[str] = None, **extra_labels
     ) -> Iterator[client.V1Job]:
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.list_namespaced_job(
             namespace=self.namespace,
             label_selector=self.signer.label_selector(
-                job_definition_name=job_definition_name
+                job_definition_name=job_definition_name, **extra_labels
             ),
         )
 
@@ -166,7 +171,7 @@ class JobManager:
         return list(self.fetch_jobs(**kwargs))
 
     @remaps_exception(matchers=[(is_kubernetes_not_found_exception, NotFoundException)])
-    def read_job(self, job_name: str) -> client.V1JobStatus:
+    def read_job(self, job_name: str) -> client.V1Job:
         batch_v1_client = client.BatchV1Api()
         # DO NOT USE read_namespaced_job if you want a filled in status field with
         # conditions. For some reason list_namespaced_job handles this fine, but not

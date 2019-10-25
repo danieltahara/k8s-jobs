@@ -75,6 +75,37 @@ class TestJobSignatureGenerator:
             f"{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name}",
         ]
 
+    def test_label_selector_extra(self):
+        signature = "woahhhh"
+        signer = JobSigner(signature)
+
+        assert signer.label_selector() == f"{JobSigner.LABEL_KEY}={signature}"
+
+        job_definition_name = "jdphd"
+        assert (
+            signer.label_selector(extra="label", another=2)
+            == f"{signer.label_selector()},extra=label,another=2"
+        )
+
+        assert (
+            signer.label_selector(job_definition_name, extra="label", another=2)
+            == f"{signer.label_selector()},{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name},extra=label,another=2"
+        )
+
+        # Various permutations are safe
+        assert (
+            signer.label_selector(
+                extra="label", another=2, job_definition_name=job_definition_name
+            )
+            == f"{signer.label_selector()},{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name},extra=label,another=2"
+        )
+        assert (
+            signer.label_selector(
+                job_definition_name=job_definition_name, extra="label", another=2
+            )
+            == f"{signer.label_selector()},{JobSigner.JOB_DEFINITION_NAME_KEY}={job_definition_name},extra=label,another=2"
+        )
+
 
 class TestJobManager:
     def test_create_job(self, mock_batch_client):
@@ -183,6 +214,21 @@ class TestJobManager:
         assert len(list(manager.fetch_jobs())) == 1
         mock_batch_client.list_namespaced_job.assert_called_once_with(
             namespace=namespace, label_selector=signer.label_selector()
+        )
+
+    def test_fetch_jobs_filters(self, mock_batch_client):
+        mock_batch_client.list_namespaced_job.return_value = V1JobList(
+            items=[V1Job(metadata=V1ObjectMeta(name="1"))], metadata=V1ListMeta()
+        )
+        namespace = "hellomoto"
+        signer = JobSigner("foo")
+        manager = JobManager(
+            namespace=namespace, signer=signer, register=StaticJobDefinitionsRegister()
+        )
+
+        assert len(list(manager.fetch_jobs(extra="filter"))) == 1
+        mock_batch_client.list_namespaced_job.assert_called_once_with(
+            namespace=namespace, label_selector=signer.label_selector(extra="filter")
         )
 
     def test_fetch_jobs_continue(self, mock_batch_client):
