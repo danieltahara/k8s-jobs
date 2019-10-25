@@ -38,10 +38,12 @@ class JobDefinition:
             return YamlStringSpecSource(self.spec)
         elif self.spec_path:
             return YamlFileSpecSource(self.spec_path)
-        else:
+        elif self.spec_config_map_name and self.spec_config_map_namespace:
             return ConfigMapSpecSource(
                 self.spec_config_map_name, self.spec_config_map_namespace
             )
+        else:
+            raise ValueError("All Spec variables are empty or incomplete")
 
 
 class ReloadingJobDefinitionsRegister(JobDefinitionsRegister):

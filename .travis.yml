@@ -16,5 +16,6 @@ install:
 #   - sudo microk8s.status --wait-ready
 #   - sudo microk8s.kubectl config view --raw > $HOME/microk8s.conf
 script:
+  - mypy k8s_jobs test
   - pytest
   # - TEST_K8S_CONFIG_PATH=$HOME/microk8s.conf pytest -m k8s_itest
