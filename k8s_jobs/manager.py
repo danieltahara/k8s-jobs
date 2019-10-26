@@ -124,7 +124,10 @@ class JobManager:
         self.register = register
 
     def create_job(
-        self, job_definition_name: str, template_args: Optional[Dict] = None
+        self,
+        job_definition_name: str,
+        template_args: Optional[Dict] = None,
+        pre_create: Optional[Callable[[client.V1Job], None]] = None,
     ) -> str:
         """
         Spawn a job for the given job_definition_name
@@ -136,6 +139,8 @@ class JobManager:
             template_args=template_args
         )
         self.signer.sign(job, job_definition_name)
+        if pre_create:
+            pre_create(job)
         batch_v1_client = client.BatchV1Api()
         response = batch_v1_client.create_namespaced_job(
             namespace=self.namespace, body=job

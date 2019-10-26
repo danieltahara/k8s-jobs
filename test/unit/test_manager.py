@@ -154,6 +154,18 @@ class TestJobManager:
 
         mock_generator.generate.assert_called_once_with(template_args=template_args)
 
+    def test_create_job_callback(self, mock_batch_client):
+        manager = JobManager(
+            namespace="hellomoto",
+            signer=Mock(),
+            register=StaticJobDefinitionsRegister({"g1": Mock()}),
+        )
+        create_callback = Mock()
+
+        manager.create_job("g1", pre_create=create_callback)
+
+        create_callback.assert_called_once()
+
     def test_delete_job(self, mock_batch_client):
         namespace = "whee"
         name = "jobname"
