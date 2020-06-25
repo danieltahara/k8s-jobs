@@ -5,8 +5,8 @@ branches:
 dist: xenial
 language: python
 python:
-  - 3.6
   - 3.7
+  - 3.8
 before_install:
   - pip install poetry
 install:
