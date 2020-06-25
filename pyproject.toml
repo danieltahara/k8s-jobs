@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "k8s-jobs"
-version = "0.1.13"
+version = "0.2.0"
 description = "Async Job Manager + AWS Batch Replacement for K8s"
 authors = ["Daniel Tahara <dktahara@gmail.com>"]
 repository = "https://github.com/danieltahara/k8s-jobs"
@@ -8,7 +8,7 @@ readme = "README.rst"
 license = "Apache-2.0"
 
 [tool.poetry.dependencies]
-python = ">=3.6"
+python = ">=3.6,<4"
 kubernetes = "^10.0"
 jinja2 = "^2.10"
 dataclasses = "^0.6.0"
