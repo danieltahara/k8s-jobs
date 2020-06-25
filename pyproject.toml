@@ -8,7 +8,7 @@ readme = "README.rst"
 license = "Apache-2.0"
 
 [tool.poetry.dependencies]
-python = ">=3.6,<3.8"
+python = ">=3.6"
 kubernetes = "^10.0"
 jinja2 = "^2.10"
 dataclasses = "^0.6.0"
